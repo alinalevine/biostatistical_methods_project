@@ -1,0 +1,12 @@
+---
+title: "final_project_haokun"
+author: "haokun yuan"
+date: "12/6/2018"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+
+```
+
