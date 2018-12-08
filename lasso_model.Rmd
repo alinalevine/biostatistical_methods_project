@@ -1,0 +1,71 @@
+---
+title: "lasso_model"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(glmnet)
+```
+
+```{r load_data}
+cancer_data = read.csv(file = "data/Cancer_Registry.csv")
+```
+
+missing data:
+
+PctSomeCol18_24
+
+PctOtherRace
+
+PctEmployed16_Over
+
+studyPerCap
+
+PctPrivateCoverageAlone
+
+binnedInc
+
+```{r inspect_data}
+cancer_data = cancer_data %>%
+  select(-PctSomeCol18_24, -PctOtherRace, -PctEmployed16_Over, -studyPerCap,
+         -PctPrivateCoverageAlone, -binnedInc, -Geography)
+
+round(cor(cancer_data),3)
+```
+
+collinearity:
+
+avgAnnCount avgDeathsPerYear popEst2015
+
+medIncome povertyPercent PctPrivateCoverage PctEmpPrivCoverage PctPublicCoverage PctPublicCoverageAlone
+
+medIncome PctBachDeg25_Over
+
+MedianAgeMale MedianAgeFemale
+
+PercentMarried PctMarriedHouseholds
+
+PctHS25_Over PctBachDeg25_Over
+
+PctWhite PctBlack
+
+```{r lasso}
+cancer_x = cancer_data %>%
+  select(-TARGET_deathRate)
+
+predictor = as.matrix(cancer_x)
+
+target = as.matrix(cancer_data$TARGET_deathRate)
+
+grid <- 10^seq(2,-2, length=10)
+
+lasso <- cv.glmnet(predictor, target, standardize = TRUE)
+
+plot(lasso$glmnet.fit, "lambda", label=TRUE)
+```
+
+
+
+
