@@ -1,0 +1,49 @@
+---
+title: "final_project_yg2625"
+author: "yue gu"
+date: "12/10/2018"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(HH)
+
+```
+
+
+## Read Data
+```{r}
+cancer_data = read.csv(file = "data/Cancer_Registry.csv")
+
+cancer_data_tidy =
+  cancer_data %>% 
+  janitor::clean_names() %>% 
+  separate(geography, into = c("county", "state"), sep = ",") %>% 
+  mutate(county = str_replace(county, " County", ""))
+```
+
+## Build model
+```{r}
+anyNA(cancer_data_tidy)
+str(cancer_data_tidy)
+
+# count missing values
+sum(is.na(cancer_data_tidy))
+sum(is.na(cancer_data_tidy$pct_some_col18_24))
+sum(is.na(cancer_data_tidy$pct_employed16_over))
+sum(is.na(cancer_data_tidy$pct_private_coverage_alone))
+
+cancer_data_tidy %>%
+  dplyr::select(-binned_inc, -county, -state) %>% 
+  cor()
+
+fit_1 = lm(target_death_rate ~ ., data = cancer_data_tidy)
+```
+
+
