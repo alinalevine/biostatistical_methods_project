@@ -51,7 +51,7 @@ PctHS25_Over PctBachDeg25_Over
 
 PctWhite PctBlack
 
-```{r lasso}
+```{r lasso, fig.width=10, fig.height=10}
 cancer_x = cancer_data %>%
   select(-TARGET_deathRate)
 
@@ -64,8 +64,28 @@ grid <- 10^seq(2,-2, length=10)
 lasso <- cv.glmnet(predictor, target, standardize = TRUE)
 
 plot(lasso$glmnet.fit, "lambda", label=TRUE)
+
+str(cancer_x)
+colnames(cancer_x)
 ```
 
+16, 21, 3, 6, 15, 17, 13, 25, 18, 23
 
+PctBachDeg25_Over, PctPublicCoverageAlone, incidenceRate, povertyPercent,
+PctHS25_Over, PctUnemployed16_Over, PctHS18_24, PctMarriedHouseholds,
+PctPrivateCoverage, PctBlack
 
+```{r linear}
+fit_1 = lm(TARGET_deathRate ~ PctBachDeg25_Over + PctPublicCoverageAlone + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+
+summary(fit_1)
+
+fit_2 = lm(TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+
+summary(fit_2)
+
+fit_3 = lm(TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage, data = cancer_data)
+
+summary(fit_3)
+```
 
