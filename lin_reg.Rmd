@@ -1,0 +1,64 @@
+---
+title: "lin_reg"
+author: "Alina Levine"
+date: "December 9, 2018"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(HH)
+```
+
+
+
+#data cleaning
+
+I want to fit one model where I include cancer incidence rate and one where I don't 
+
+pct other race does not make sense bc race percentages should add up to 100 but they do not. pct_some_col18_24 lin combo of 3 other variables
+
+```{r}
+
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+  janitor::clean_names()
+
+death_data = read_csv("data/Cancer_Registry.csv") %>%
+  janitor::clean_names() %>%
+  select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, geography))
+
+fit_full = lm(target_death_rate ~., data = death_data)
+
+  
+
+```
+
+
+median income and poverty_percent are highly correlated, so I will just use median income
+percent private coverage and pct_public_coverage_alone are highly negatively correlated: because when more people have just public covergage, fewer people have private coverage
+
+```{r}
+cor(death_data)
+death_data = death_data %>%
+  dplyr::select(-c(med_income, pct_private_coverage))
+
+fit_full = lm(target_death_rate ~., data = death_data)
+
+vif(fit_full)
+
+#median_age_male, #median_age_female have high vif, I will take those out and just use median age
+#percent_white and #percent_black have high vif, I will take out pct_black
+#pct_married_households has high vif
+#pct_employed16_over has high vif
+
+death_data = death_data_full %>%
+  dplyr::select(-c(pct_black, pct_asian, pct_employed16_over, median_age_male, median_age_female, pct_married_households, avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, geography, med_income, pct_private_coverage, pct_public_coverage, pct_hs25_over, pct_emp_priv_coverage, pct_private_coverage_alone))
+
+fit_full = lm(target_death_rate ~., data = death_data)
+
+vif(fit_full)
+
+```
+
