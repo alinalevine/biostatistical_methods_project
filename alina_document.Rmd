@@ -64,7 +64,7 @@ death_data_full = left_join(cancer_1,age_data,by = "geography")
 death_data_full = death_data_full %>% 
   separate(geography, c("county","state"), sep = ", ")
 
-death_data_full = death_data_full %>%
+death_data = death_data_full %>%
     janitor::clean_names() %>%
     dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
 
@@ -154,7 +154,7 @@ vif(fit_full_2)
 
 
 death_data_3 = death_data_2 %>%
-  dplyr::select(-c(pct_public_coverage, pct_bach_deg25_over))
+  dplyr::select(-c(pct_public_coverage))
   
 
 fit_full_3 = lm(target_death_rate ~., data = death_data_3)
