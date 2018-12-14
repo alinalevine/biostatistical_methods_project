@@ -37,9 +37,10 @@ death_data_full = read_csv("data/Cancer_Registry.csv") %>%
   
 death_data = death_data_full %>%
   janitor::clean_names() %>%
-  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, incidence_rate, pct_asian, pct_other_race))
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, incidence_rate, pct_asian, pct_other_race, state))
 
-
+fit = lm(target_death_rate ~ ., data = death_data)
+summary(fit)
 
 ```
 
