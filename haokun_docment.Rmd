@@ -1,0 +1,56 @@
+---
+title: ''
+author: "haokun yuan"
+date: "12/14/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(rvest)
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+    janitor::clean_names() %>%
+    mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+    separate(geography, into = c("county", "state"), sep = ", ") %>%
+    mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+    mutate(race_other = pct_other_race + pct_asian) %>%
+    mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+    mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+           region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+           region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>% 
+   unite(geography,c(county, state), sep = ", ")
+    
+cancer_data = read_csv("./data/Cancer_Registry.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(study_per_cap = ifelse(study_per_cap == 0, 0, 1),
+         mortality = avg_deaths_per_year/pop_est2015,
+         geography = ifelse(str_detect(geography, "County") == TRUE,geography,str_replace(geography, ","," County,")),
+         geography = str_replace(geography,"city"," City"),
+         race_nonwhite = pct_asian + pct_other_race + pct_black)
+         #race_nonwhite = ifelse(race_white >= 50,0,1))
+
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  dplyr::select(Areaname,SEX255209D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+
+age_data=read_csv("./data/AGE04.csv") %>% 
+  dplyr::select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography") 
+
+death_data_full = death_data_full %>% 
+  separate(geography, c("county","state"), sep = ", ")
+
+death_data = death_data_full %>%
+    janitor::clean_names() %>%
+    dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
+
+```
