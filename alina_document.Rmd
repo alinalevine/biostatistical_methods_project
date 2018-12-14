@@ -198,7 +198,7 @@ percent private coverage and pct_public_coverage_alone are highly negatively cor
 
 best <- function(model, ...) 
 {
-  subsets <- regsubsets(formula(model), model.frame(model), ...)
+  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
   subsets <- with(summary(subsets),
                   cbind(p = as.numeric(rownames(which)), which, rss, rsq, adjr2, cp, bic))
   
