@@ -28,9 +28,9 @@ death_data_full = read_csv("data/Cancer_Registry.csv") %>%
   mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
   separate(geography, into = c("county", "state"), sep = ",") %>%
   mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
-  mutate(race_white_80_cutoff) = ifelse(pct_white>=80, "1", "0") %>%
-  mutate(race_black_20_cutoff) = ifelse(pct_black>=20, "1", "0") %>%  #black has a lower cutoff bc the distribution is lower
-  select(-pct_white, -pct_black)
+  mutate(race_white_80_cutoff = ifelse(pct_white>=80, "1", "0")) %>%
+  mutate(race_black_20_cutoff = ifelse(pct_black>=20, "1", "0")) %>%  #black has a lower cutoff bc the distribution is lower
+  dplyr::select(-c(pct_white, pct_black))
   
   
 death_data = death_data_full %>%
