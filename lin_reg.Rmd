@@ -24,15 +24,61 @@ pct other race does not make sense bc race percentages should add up to 100 but 
 ```{r}
 
 death_data_full = read_csv("data/Cancer_Registry.csv") %>%
-  janitor::clean_names()
-
-death_data = read_csv("data/Cancer_Registry.csv") %>%
   janitor::clean_names() %>%
-  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, geography))
+  mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+  separate(geography, into = c("county", "state"), sep = ",") %>%
+  mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+  mutate(race_white_80_cutoff) = ifelse(pct_white>=80, "1", "0") %>%
+  mutate(race_black_20_cutoff) = ifelse(pct_black>=20, "1", "0") %>%  #black has a lower cutoff bc the distribution is lower
+  select(-pct_white, -pct_black)
+  
+  
+death_data = death_data_full %>%
+  janitor::clean_names() %>%
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, county))
 
 
 
 ```
+
+
+#expoloratory plots
+
+```{r}
+
+ggplot(data = death_data_full, aes( x= med_income, y = target_death_rate)) +
+  geom_point()   #should I add a polynomial term for this
+
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) +
+  geom_point()
+
+#age does not look related unless there are confounders for age
+
+
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_black, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_white, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_unemployed16_over, y = target_death_rate)) +
+  geom_point() 
+
+
+ggplot(data = death_data_full, aes( x= pct_bach_deg18_24, y = target_death_rate)) +
+  geom_point() 
+
+
+```
+
 
 
 median income and poverty_percent are highly correlated, so I will just use median income
@@ -42,10 +88,10 @@ percent private coverage and pct_public_coverage_alone are highly negatively cor
 
 ```{r}
 cor(death_data)
-death_data = death_data %>%
+death_data_1 = death_data %>%
   dplyr::select(-c(med_income, pct_private_coverage))
 
-fit_full_1 = lm(target_death_rate ~., data = death_data)
+fit_full_1 = lm(target_death_rate ~., data = death_data_1)
 
 vif(fit_full_1)
 #median_age_male, #median_age_female have high vif, I will take those out and just use median age
@@ -53,10 +99,10 @@ vif(fit_full_1)
 #pct_married_households has high vif
 #pct_employed16_over has high vif, pct_private_coverage_alone
 
-death_data = death_data_full %>%
-  dplyr::select(-c(pct_black, pct_asian, pct_employed16_over, median_age_male, median_age_female, pct_married_households, avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, geography, med_income, pct_hs25_over, pct_private_coverage_alone))
+death_data_2 = death_data_full %>%
+  dplyr::select(-c(pct_black, pct_asian, pct_employed16_over, median_age_male, median_age_female, pct_married_households, avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, county, med_income, pct_hs25_over, pct_private_coverage_alone))
 
-fit_full_2 = lm(target_death_rate ~., data = death_data)
+fit_full_2 = lm(target_death_rate ~., data = death_data_2)
 
 vif(fit_full_2)
 
@@ -65,10 +111,10 @@ vif(fit_full_2)
 #pct_public_coverage_alone
 
 
-death_data = death_data_full %>%
-  dplyr::select(-c(pct_black, pct_asian, pct_employed16_over, median_age_male, median_age_female, pct_married_households, avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, geography, med_income, pct_hs25_over, pct_private_coverage_alone, pct_public_coverage_alone))
+death_data_3 = death_data_full %>%
+  dplyr::select(-c(pct_black, pct_asian, pct_employed16_over, median_age_male, median_age_female, pct_married_households, avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, county, med_income, pct_hs25_over, pct_private_coverage_alone, pct_public_coverage_alone))
 
-fit_full_3 = lm(target_death_rate ~., data = death_data)
+fit_full_3 = lm(target_death_rate ~., data = death_data_3)
 
 vif(fit_full_3)
 
@@ -121,9 +167,75 @@ the cp is minimized and adjusted r squared is maximimized in the following model
 
 incidence rate, poverty_percent, pct_nohs_18_24, pct_hs_18_24, pct_bachdeg_25_over, pct_unemployed16_over, pct_emp_priv_coverage_ birth_rate 
 
+#final model
+
+looking at residuals vs. co-variate to see if I should add polynomial terms
+
 ```{r}
-plot(model)
+final_mod = lm(target_death_rate ~ incidence_rate + poverty_percent + pct_no_hs18_24 + pct_hs18_24 + pct_bach_deg18_24 + pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage + birth_rate, data = death_data_full)
+
+plot(final_mod)
+
+
+death_data_resid_predict = death_data_full %>% 
+  add_residuals(final_mod) %>% 
+  add_predictions(final_mod)
+
+ggplot(death_data_resid_predict, aes(x = poverty_percent, y = resid)) +
+  geom_point() #no evidence of necessary polynomial term or fanning
+
+ggplot(death_data_resid_predict, aes(x = poverty_percent, y = resid)) +
+  geom_point() #no evidence of necessary polynomial term or fanning
+
+
+ggplot(death_data_resid_predict, aes(x = birth_rate, y = resid)) +
+  geom_point() #might be some fanning, I can't tell
+
+
+ggplot(death_data_resid_predict, aes(x = pct_emp_priv_coverage, y = resid)) +
+  geom_point() 
+      #definitely fanning
+
+
+ggplot(death_data_resid_predict, aes(x = pct_bach_deg25_over, y = resid)) +
+  geom_point() 
+#huge amount of fanning
+
+
+ggplot(death_data_resid_predict, aes(x = pct_bach_deg18_24, y = resid)) +
+  geom_point()  #huge amount of fanning
+
+
+ggplot(death_data_resid_predict, aes(x = pct_hs18_24, y = resid)) +
+  geom_point() 
+
+```
+
+
+
+should we do one model controlling for cancer incidence and one model not controlling for cancer incidence?
+
+
+#Model Not controlling for incidence
+
+I get the same additional variables
+
+```{r}
+
+
+model_rm_incidence = update(model, . ~ . -incidence_rate)
+
+best(model_rm_incidence) %>% View()
+
+#the only difference is incidence rate 
+
+model_rm_incidence = update(final_mod, .~. -incidence_rate)
+
+summary(model_rm_incidence)
+summary(final_mod)
+
 
 
 ```
+
 
