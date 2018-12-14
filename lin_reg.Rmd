@@ -28,14 +28,13 @@ death_data_full = read_csv("data/Cancer_Registry.csv") %>%
   mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
   separate(geography, into = c("county", "state"), sep = ",") %>%
   mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
-  mutate(race_white_80_cutoff = ifelse(pct_white>=80, "1", "0")) %>%
-  mutate(race_black_20_cutoff = ifelse(pct_black>=20, "1", "0")) %>%  #black has a lower cutoff bc the distribution is lower
-  dplyr::select(-c(pct_white, pct_black))
+  mutate(race_other = pct_other_race + pct_asian) %>%
+  dplyr::select(-c(pct_white, pct_black, pct_other_race))
   
   
 death_data = death_data_full %>%
   janitor::clean_names() %>%
-  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, pct_other_race, binned_inc, county))
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, incidence_rate, pct_asian))
 
 
 
@@ -87,7 +86,7 @@ percent private coverage and pct_public_coverage_alone are highly negatively cor
 #Multicollinearity
 
 ```{r}
-cor(death_data)
+cor(death_data %>%select_if(is.numeric))
 death_data_1 = death_data %>%
   dplyr::select(-c(med_income, pct_private_coverage))
 
