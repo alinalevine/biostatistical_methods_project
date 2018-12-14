@@ -7,6 +7,140 @@ output: github_document
 
 ```{r setup, include=FALSE}
 library(tidyverse)
+library(rvest)
+#library(usmap)
+#library(faraway)
+#library(leaps)
+#library(HH)
+#library(MPV)  
+#library(boot)
+#library(caret)
+```
+
+```{r}
+cancer_data = read_csv("./data/Cancer_Registry.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(study_per_cap = ifelse(study_per_cap == 0, 0, 1),
+         mortality = avg_deaths_per_year/pop_est2015,
+         geography = ifelse(str_detect(geography, "County") == TRUE,geography,str_replace(geography, ","," County,")),
+         geography = str_replace(geography,"city"," City"),
+         race_nonwhite = pct_asian + pct_other_race + pct_black)
+         #race_nonwhite = ifelse(race_white >= 50,0,1))
+
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  select(Areaname,SEX255209D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(state = state.name[match(state,state.abb)],
+         county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+
+age_data=read_csv("./data/AGE04.csv") %>% 
+  select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(state = state.name[match(state,state.abb)],
+         county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+
+cancer_1 = left_join(cancer_data,sex_data,by = "geography")
+cancer_2 = left_join(cancer_1,age_data,by = "geography") 
+#Virgina louisana DC,louis city
+#age,education,race ,recode area
+
+cancer_nocounty = cancer_2 %>% select(-geography)
+summary(lm(target_death_rate ~ ., cancer_nocounty)) 
+```
+
+```{r}
+cancer_data %>% 
+  select(target_death_rate,geography) %>% 
+  arrange(desc(target_death_rate)) %>% 
+  separate(geography, c("county", "state"), sep = ",") %>% 
+  group_by(state) %>% 
+  mutate(state_death = mean(target_death_rate)) %>% 
+  distinct(state,state_death) %>% 
+  arrange(desc(state_death)) 
+#%>% 
+ # plot_usmap(value = "state_death")
+  
+```
+```{r}
+#cancer_data %>% 
+  #select(avg_ann_count,avg_deaths_per_year,pop_est2015,incidence_rate,target_death_rate) %>% 
+  #mutate(incidence_rate_1 = avg_ann_count/(pop_est2015/100000),
+         #death_rate_1 = avg_deaths_per_year/(pop_est2015/100000)) %>% 
+
+```
+
+```{r}
+data_1 = cancer_data %>% 
+  select(target_death_rate,med_income,poverty_percent,median_age,birth_rate)
+data_continous = cancer_data %>% select(-geography,-study_per_cap,-binned_inc)
+lm = glm(target_death_rate~.,data = data_continous)
+summary(lm)
+#step(lm,direction = "both")
+
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    median_age_male + percent_married + pct_no_hs18_24 + pct_hs18_24 + 
+    pct_some_col18_24 + pct_bach_deg18_24 + pct_hs25_over + pct_bach_deg25_over + 
+    pct_employed16_over + pct_private_coverage_alone + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_public_coverage_alone + pct_white + 
+    pct_black + pct_other_race + pct_married_households, data = data_continous))
+## leading cause of cancer, only most difference prostate,breast
+```
+```{r}
+summary(cancer_data)
+```
+```{r}
+d = cancer_data %>% 
+  mutate(white = ifelse(pct_white >= 77.30,1,0))
+  
+pairs(data_1)
+  
+summary(lm(target_death_rate~med_income+poverty_percent+median_age+birth_rate+white,d))
+```
+```{r}
+l = cancer_2 %>% 
+  #select(target_death_rate,geography) %>% 
+  arrange(desc(target_death_rate)) %>% 
+  separate(geography, c("county", "state"), sep = ",")
+
+summary(lm(target_death_rate~state+med_income+poverty_percent+median_age+birth_rate+incidence_rate,l))
+
+#step(lm(formula = target_death_rate ~ avg_ann_count + mortality+ state + med_income + poverty_percent + incidence_rate+SEX255209D+AGE775208D+pct_other_race+percent_married+pct_private_coverage+study_per_cap, data = l),direction = "both")
+
+l = l %>% 
+  select(-county)
+
+summary(lm(formula = target_death_rate ~ ., data = l))
+#step(lm(formula = target_death_rate ~ ., data = l))
+
+summary(lm(formula = target_death_rate ~ avg_ann_count + mortality+ state + poverty_percent + incidence_rate+SEX255209D+AGE775208D+pct_other_race+percent_married+pct_private_coverage+study_per_cap, data = l))
+
+summary(lm(formula = target_death_rate ~ avg_ann_count + incidence_rate +state + med_income + poverty_percent+pct_other_race +percent_married+pct_private_coverage+study_per_cap, data = l))
+
+e = cancer_data %>% separate(geography, c("county", "state"), sep = ",") %>% select(-county)
+summary(lm(target_death_rate ~ ., data = e))
+
+#vif(lm(target_death_rate ~ ., data = e))
+```
+
+```{r}
+hist((cancer_data$target_death_rate)^(1/3))
+
+par(mfrow = c(1,1))
+
+plot(lm(formula = target_death_rate ~ avg_ann_count + mortality+ state + poverty_percent + incidence_rate+SEX255209D+AGE775208D+pct_other_race+percent_married+pct_private_coverage+study_per_cap, data = l))
+
+d =cancer_data %>% 
+  mutate(race = pct_white +pct_asian+pct_black+pct_other_race) %>% 
+  filter(race <= 90) 
+
+
+
+
+
 
 ```
 
