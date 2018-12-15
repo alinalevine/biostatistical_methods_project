@@ -10,65 +10,53 @@ library(glmnet)
 ```
 
 ```{r load_data}
-cancer_data = read.csv(file = "data/Cancer_Registry.csv")
-
 death_data_full = read_csv("data/Cancer_Registry.csv") %>%
-  janitor::clean_names() %>%
-  mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
-  separate(geography, into = c("county", "state"), sep = ", ") %>%
-  mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
-  select(-pct_other_race, -pct_asian) %>%
-  mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
-  mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
-         region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
-         region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
-         region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0))
-  
+    janitor::clean_names() %>%
+    mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+    separate(geography, into = c("county", "state"), sep = ", ") %>%
+    mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+    mutate(race_other = pct_other_race + pct_asian) %>%
+    mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+    mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+           region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+           region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>% 
+   unite(geography,c(county, state), sep = ", ")
+    
+cancer_data = read_csv("./data/Cancer_Registry.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(study_per_cap = ifelse(study_per_cap == 0, 0, 1),
+         mortality = avg_deaths_per_year/pop_est2015,
+         geography = ifelse(str_detect(geography, "County") == TRUE,geography,str_replace(geography, ","," County,")),
+         geography = str_replace(geography,"city"," City"),
+         race_nonwhite = pct_asian + pct_other_race + pct_black)
+         #race_nonwhite = ifelse(race_white >= 50,0,1))
+
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  dplyr::select(Areaname,SEX255209D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+
+age_data=read_csv("./data/AGE04.csv") %>% 
+  dplyr::select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography") 
+
+death_data_full = death_data_full %>% 
+  separate(geography, c("county","state"), sep = ", ")
+
 death_data = death_data_full %>%
-  janitor::clean_names() %>%
-  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, state))
-
+    janitor::clean_names() %>%
+    dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
 ```
 
-missing data:
-
-PctSomeCol18_24
-
-PctOtherRace
-
-PctEmployed16_Over
-
-studyPerCap
-
-PctPrivateCoverageAlone
-
-binnedInc
-
-```{r inspect_data}
-cancer_data = cancer_data %>%
-  select(-PctSomeCol18_24, -PctOtherRace, -PctEmployed16_Over, -studyPerCap,
-         -PctPrivateCoverageAlone, -binnedInc, -Geography)
-
-round(cor(cancer_data),3)
-```
-
-collinearity:
-
-avgAnnCount avgDeathsPerYear popEst2015
-
-medIncome povertyPercent PctPrivateCoverage PctEmpPrivCoverage PctPublicCoverage PctPublicCoverageAlone
-
-medIncome PctBachDeg25_Over
-
-MedianAgeMale MedianAgeFemale
-
-PercentMarried PctMarriedHouseholds
-
-PctHS25_Over PctBachDeg25_Over
-
-PctWhite PctBlack
-
-```{r lasso, fig.width=10, fig.height=10}
+```{r lasso, fig.width=10, fig.height=100}
 d = death_data
 
 d[is.na(d)] <- 0
@@ -80,9 +68,9 @@ predictor = as.matrix(cancer_x)
 
 target = as.matrix(d$target_death_rate)
 
-grid <- 10^seq(2,-2, length=10)
+grid <- 10^seq(2,-2, length=20)
 
-lasso <- cv.glmnet(predictor, target, standardize = TRUE)
+lasso <- cv.glmnet(predictor, target, standardize = TRUE, lambda = grid)
 
 plot(lasso$glmnet.fit, "lambda", label=TRUE)
 
@@ -96,18 +84,31 @@ PctHS25_Over, PctUnemployed16_Over, PctHS18_24, PctMarriedHouseholds,
 PctPrivateCoverage, PctBlack
 
 ```{r linear}
-fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_private_coverage_alone + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
+fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + pct_public_coverage_alone + poverty_percent + region_se + pct_unemployed16_over + birth_rate + pct_hs25_over + pct_hs18_24 + pct_married_households + race_other + pct_employed16_over, data = d)
 
 summary(fit_1)
 
-fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
+fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + pct_public_coverage_alone + poverty_percent + region_se + pct_unemployed16_over + birth_rate + pct_hs25_over + pct_hs18_24 + pct_married_households + race_other, data = d)
 
 summary(fit_2)
 
-fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + pct_hs18_24 + birth_rate, data = d)
+fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + pct_public_coverage_alone + poverty_percent + region_se + pct_unemployed16_over + birth_rate + pct_hs25_over + pct_hs18_24 + pct_married_households, data = d)
 
 summary(fit_3)
+```
 
+```{r criterion}
+best <- function(model, ...) 
+{
+  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)), which, rss, rsq, adjr2, cp, bic))
+  
+  return(subsets)
+}  
 
+View(best(fit_2))
+
+View(best(fit_3))
 ```
 
