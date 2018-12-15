@@ -1,0 +1,288 @@
+---
+title: "Untitled"
+author: "haokun yuan"
+date: "12/14/2018"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(HH)
+library("leaps")
+library(caret)
+```
+
+
+
+#data cleaning
+
+I want to fit one model where I include cancer incidence rate and one where I don't 
+
+pct other race does not make sense bc race percentages should add up to 100 but they do not. pct_some_col18_24 lin combo of 3 other variables
+
+```{r}
+  
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+    janitor::clean_names() %>%
+    mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+    separate(geography, into = c("county", "state"), sep = ", ") %>%
+    mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+    mutate(race_other = pct_other_race + pct_asian) %>%
+    mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+    mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+           region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+           region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>% 
+   unite(geography,c(county, state), sep = ", ")
+    
+
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  dplyr::select(Areaname,SEX255209D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " "),
+         sex_ratio = SEX255209D) %>% 
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,sex_ratio)
+
+age_data=read_csv("./data/AGE04.csv") %>% 
+  dplyr::select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " "),
+         pct_aging = AGE775208D) %>% 
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,pct_aging)
+
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography") 
+
+death_data_full = death_data_full %>% 
+  separate(geography, c("county","state"), sep = ", ")
+
+death_data = death_data_full %>%
+    janitor::clean_names() %>%
+    dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state)) %>% mutate(sex_ratio = replace_na(sex_ratio,50.2), pct_aging = replace_na(pct_aging,15.58))#,pct_private_coverage_alone= replace_na(pct_private_coverage_alone,48.48), pct_employed16_over=replace_na(pct_employed16_over,48.48),median_age=replace_na(median_age,40.82))
+                                                                                                                                    
+                                                                    
+```
+
+
+
+#data cleaning
+
+I want to fit one model where I include cancer incidence rate and one where I don't 
+
+pct other race does not make sense bc race percentages should add up to 100 but they do not. pct_some_col18_24 lin combo of 3 other variables
+
+
+#expoloratory plots
+
+```{r}
+
+
+ggplot(death_data_full, aes(x = target_death_rate)) +
+  geom_histogram()
+
+ggplot(data = death_data_full, aes( x= med_income, y = target_death_rate)) +
+  geom_point()   #should I add a polynomial term for this
+
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) +
+  geom_point()
+
+#age does not look related unless there are confounders for age
+
+
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_black, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_white, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_unemployed16_over, y = target_death_rate)) +
+  geom_point() 
+
+
+ggplot(data = death_data_full, aes( x= pct_bach_deg18_24, y = target_death_rate)) +
+  geom_point() 
+
+
+```
+
+
+
+median income and poverty_percent are highly correlated, so I will just use median income
+percent private coverage and pct_public_coverage_alone are highly negatively correlated: because when more people have just public covergage, fewer people have private coverage
+
+#Multicollinearity
+
+```{r}
+cor(death_data %>%select_if(is.numeric))
+death_data_1 = death_data #%>%
+  dplyr::select(-c(med_income, pct_private_coverage))
+
+fit_full_1 = lm(target_death_rate ~., data = death_data_1)
+
+vif(fit_full_1)
+#median_age_male, #median_age_female have high vif, I will take those out and just use median age
+#percent_white and #percent_black have high vif, I will take out pct_black
+#pct_married_households has high vif
+#pct_employed16_over has high vif, pct_private_coverage_alone
+
+death_data_2 = death_data_1 %>%
+  dplyr::select(-c(pct_white, median_age, percent_married, pct_public_coverage,median_age_female))
+
+fit_full_2 = lm(target_death_rate ~., data = death_data_2)
+
+vif(fit_full_2)
+
+
+#there is still high-multicollinearity among insurance variables, so I will remove 
+#pct_public_coverage_alone
+
+
+death_data_3 = death_data_2 %>%
+  dplyr::select(-c(poverty_percent,pct_emp_priv_coverage,pct_bach_deg25_over ))
+  
+
+fit_full_3 = lm(target_death_rate ~., data = death_data_3)
+
+vif(fit_full_3)
+
+#will remove pct_private_coverage
+
+
+```
+
+
+
+
+
+
+
+#expoloratory plots
+
+```{r}
+
+ggplot(data = death_data_full, aes( x= med_income, y = target_death_rate)) +
+  geom_point()   #should I add a polynomial term for this
+
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) +
+  geom_point()
+
+#age does not look related unless there are confounders for age
+
+
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_black, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_white, y = target_death_rate)) +
+  geom_point()
+
+
+ggplot(data = death_data_full, aes( x= pct_unemployed16_over, y = target_death_rate)) +
+  geom_point() 
+
+
+ggplot(data = death_data_full, aes( x= pct_bach_deg18_24, y = target_death_rate)) +
+  geom_point() 
+
+
+```
+
+
+
+median income and poverty_percent are highly correlated, so I will just use median income
+percent private coverage and pct_public_coverage_alone are highly negatively correlated: because when more people have just public covergage, fewer people have private coverage
+
+#Multicollinearity
+
+
+#Criteria
+
+```{r}
+best <- function(model, ...) 
+{
+  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)), which, rss, rsq, adjr2, cp, bic))
+  
+  return(subsets)
+}  
+
+knitr::kable(best(fit_full_3))
+
+#View(best(fit_full_3)[16,]) #use model from row 17 cp is 15.29
+```
+
+```{r}
+reg = lm(formula = target_death_rate ~ incidence_rate + poverty_percent +
+           avg_household_size + percent_married + pct_hs18_24 +
+           pct_bach_deg18_24 + pct_hs25_over + pct_unemployed16_over + 
+           pct_public_coverage_alone + pct_black + birth_rate +
+           race_other + region_w + region_sw + region_me +
+           region_se + sex_ratio+pct_aging, data = death_data_3)
+```
+
+identify outlier
+
+```{r}
+stu_res = rstandard(reg)
+
+outliers_y = stu_res[abs(stu_res) > 2.5]
+outliers_y
+
+brand.hat = hatvalues(reg)
+brand.hat[brand.hat > 0.2]
+brand.hat[brand.hat > 2*17/3059]
+hist(brand.hat)
+influence.measures(reg)
+```
+
+Diagnostic Plot
+
+```{r}
+plot(reg)
+```
+
+Cross Validation
+
+```{r}
+set.seed(1)
+data_train = trainControl(method = "cv", number = 10)
+model_caret = train(target_death_rate ~ incidence_rate + poverty_percent
+                    + avg_household_size + percent_married + pct_hs18_24
+                    + pct_bach_deg18_24 + pct_hs25_over +
+                      pct_unemployed16_over + pct_public_coverage_alone +
+                      pct_black + birth_rate + race_other + region_w +
+                      region_sw + region_me +
+                      region_se + sex_ratio + pct_aging, data =
+                      death_data_3,
+                    trControl = data_train,
+                    method = 'lm',
+                    na.action = na.pass)
+model_caret
+model_caret$finalModel
+```
+
+```{r}
+
+```
+

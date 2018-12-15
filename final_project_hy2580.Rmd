@@ -11,17 +11,31 @@ library(rvest)
 #library(usmap)
 #library(faraway)
 #library(leaps)
-#library(HH)
+library(HH)
 #library(MPV)  
 #library(boot)
 #library(caret)
+library("leaps")
 ```
 
 ```{r}
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+    janitor::clean_names() %>%
+    mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+    separate(geography, into = c("county", "state"), sep = ", ") %>%
+    mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+    mutate(race_other = pct_other_race + pct_asian) %>%
+    mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+    mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+           region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+           region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>% 
+   unite(geography,c(county, state), sep = ", ")
+    
 cancer_data = read_csv("./data/Cancer_Registry.csv") %>% 
   janitor::clean_names() %>% 
   mutate(study_per_cap = ifelse(study_per_cap == 0, 0, 1),
-         mortality = avg_deaths_per_year/pop_est2015,
+         mortality = avg_deaths_per_year/pop_est2015*100000,
          geography = ifelse(str_detect(geography, "County") == TRUE,geography,str_replace(geography, ","," County,")),
          geography = str_replace(geography,"city"," City"),
          race_nonwhite = pct_asian + pct_other_race + pct_black)
@@ -35,21 +49,117 @@ sex_data = read_csv("./data/SEX01.csv") %>%
          county = paste(county,"County", sep = " ")) %>% 
   unite(geography,c(county, state), sep = ", ")
 
-age_data=read_csv("./data/AGE04.csv") %>% 
-  select(Areaname,AGE775208D) %>% 
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  dplyr::select(Areaname,SEX255209D) %>% 
   separate(Areaname, c("county","state"), sep = ", ") %>% 
   na.omit() %>% 
-  mutate(state = state.name[match(state,state.abb)],
-         county = paste(county,"County", sep = " ")) %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
   unite(geography,c(county, state), sep = ", ")
 
-cancer_1 = left_join(cancer_data,sex_data,by = "geography")
-cancer_2 = left_join(cancer_1,age_data,by = "geography") 
+age_data=read_csv("./data/AGE04.csv") %>% 
+  dplyr::select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography") 
+
+death_data_full = death_data_full %>% 
+  separate(geography, c("county","state"), sep = ", ")
+
+death_data = death_data_full %>%
+    janitor::clean_names() %>%
+    mutate(mortality = avg_deaths_per_year/pop_est2015)
+    dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
+
+death_data_0 = death_data_full %>%
+    janitor::clean_names() %>%
+    dplyr::select(-c( binned_inc, county, state))
 #Virgina louisana DC,louis city
 #age,education,race ,recode area
 
 cancer_nocounty = cancer_2 %>% select(-geography)
 summary(lm(target_death_rate ~ ., cancer_nocounty)) 
+```
+
+```{r}
+cor(death_data %>%select_if(is.numeric))
+death_data_1 = death_data %>%
+  dplyr::select(-c(med_income, pct_private_coverage))
+
+fit_full_1 = lm(target_death_rate ~., data = death_data_1)
+
+vif(fit_full_1)
+#median_age_male, #median_age_female have high vif, I will take those out and just use median age
+#percent_white and #percent_black have high vif, I will take out pct_black
+#pct_married_households has high vif
+#pct_employed16_over has high vif, pct_private_coverage_alone
+
+death_data_2 = death_data_1 %>%
+  dplyr::select(-c(pct_white, median_age_female, median_age_male, pct_married_households, pct_private_coverage_alone, pct_employed16_over))
+
+fit_full_2 = lm(target_death_rate ~., data = death_data_2)
+
+vif(fit_full_2)
+
+
+#there is still high-multicollinearity among insurance variables, so I will remove 
+#pct_public_coverage_alone
+
+
+death_data_3 = death_data_2 %>%
+  dplyr::select(-c(pct_public_coverage, pct_bach_deg25_over))
+  
+
+fit_full_3 = lm(target_death_rate ~., data = death_data_3)
+
+vif(fit_full_3)
+
+#will remove pct_private_coverage
+
+```
+
+```{r}
+death_data_3 %>% 
+  skimr::skim()
+model = fit_full_4
+
+step(fit_full_3, direction='backward')
+
+
+model_stepwise = lm(formula = target_death_rate ~ poverty_percent + median_age + 
+    avg_household_size + percent_married + pct_no_hs18_24 + pct_hs18_24 + 
+    pct_bach_deg18_24 + pct_hs25_over + pct_unemployed16_over + 
+    pct_emp_priv_coverage + pct_public_coverage_alone + pct_black + 
+    birth_rate + race_other + region_w + region_se + incidence_rate, data = death_data_3)
+
+summary(model_stepwise)
+
+best <- function(model, ...) 
+{
+  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)), which, rss, rsq, adjr2, cp, bic))
+  
+  return(subsets)
+}  
+
+View(best(fit_full_2))
+summary(lm(formula = target_death_rate ~ incidence_rate + poverty_percent + 
+    study_per_cap  + percent_married + pct_hs18_24 + 
+    pct_bach_deg18_24 + pct_hs25_over + pct_unemployed16_over + 
+    pct_public_coverage_alone + pct_black + birth_rate + race_other + 
+    region_w + region_sw + region_me + region_se +sex255209d+age775208d, data = death_data_3))
+
+plot(lm(formula = target_death_rate ~ incidence_rate + poverty_percent + 
+    study_per_cap  + percent_married + pct_hs18_24 + 
+    pct_bach_deg18_24 + pct_hs25_over + pct_unemployed16_over + 
+    pct_public_coverage_alone + pct_black + birth_rate + race_other + 
+    region_w + region_sw + region_me + region_se +sex255209d+age775208d, data = death_data_3))
+
+
 ```
 
 ```{r}
@@ -139,7 +249,8 @@ d =cancer_data %>%
 
 
 
-
+cancer_data %>% dplyr::select(mortality,geography, target_death_rate) %>%
+  mutate(mortality = mortality*100000) %>% View()
 
 
 ```
