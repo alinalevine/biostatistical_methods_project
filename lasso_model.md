@@ -3,6 +3,36 @@ lasso\_model
 
 ``` r
 cancer_data = read.csv(file = "data/Cancer_Registry.csv")
+
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+  janitor::clean_names() %>%
+  mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+  separate(geography, into = c("county", "state"), sep = ", ") %>%
+  mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+  select(-pct_other_race, -pct_asian) %>%
+  mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+  mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+         region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+         region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+         region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0))
+```
+
+    ## Parsed with column specification:
+    ## cols(
+    ##   .default = col_double(),
+    ##   avgDeathsPerYear = col_integer(),
+    ##   medIncome = col_integer(),
+    ##   popEst2015 = col_integer(),
+    ##   binnedInc = col_character(),
+    ##   Geography = col_character()
+    ## )
+
+    ## See spec(...) for full column specifications.
+
+``` r
+death_data = death_data_full %>%
+  janitor::clean_names() %>%
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, state))
 ```
 
 missing data:
@@ -297,12 +327,16 @@ PctHS25\_Over PctBachDeg25\_Over
 PctWhite PctBlack
 
 ``` r
-cancer_x = cancer_data %>%
-  select(-TARGET_deathRate)
+d = death_data
+
+d[is.na(d)] <- 0
+
+cancer_x = d %>%
+  select(-target_death_rate)
 
 predictor = as.matrix(cancer_x)
 
-target = as.matrix(cancer_data$TARGET_deathRate)
+target = as.matrix(d$target_death_rate)
 
 grid <- 10^seq(2,-2, length=10)
 
@@ -314,161 +348,132 @@ plot(lasso$glmnet.fit, "lambda", label=TRUE)
 ![](lasso_model_files/figure-markdown_github/lasso-1.png)
 
 ``` r
-str(cancer_x)
+colnames(predictor)
 ```
 
-    ## 'data.frame':    3047 obs. of  26 variables:
-    ##  $ avgAnnCount           : num  1397 173 102 427 57 ...
-    ##  $ avgDeathsPerYear      : int  469 70 50 202 26 152 97 71 36 1380 ...
-    ##  $ incidenceRate         : num  490 412 350 430 350 ...
-    ##  $ medIncome             : int  61898 48127 49348 44243 49955 52313 37782 40189 42579 60397 ...
-    ##  $ popEst2015            : int  260131 43269 21026 75882 10321 61023 41516 20848 13088 843954 ...
-    ##  $ povertyPercent        : num  11.2 18.6 14.6 17.1 12.5 15.6 23.2 17.8 22.3 13.1 ...
-    ##  $ MedianAge             : num  39.3 33 45 42.8 48.3 45.4 42.6 51.7 49.3 35.8 ...
-    ##  $ MedianAgeMale         : num  36.9 32.2 44 42.2 47.8 43.5 42.2 50.8 48.4 34.7 ...
-    ##  $ MedianAgeFemale       : num  41.7 33.7 45.8 43.4 48.9 48 43.5 52.5 49.8 37 ...
-    ##  $ AvgHouseholdSize      : num  2.54 2.34 2.62 2.52 2.34 2.58 2.42 2.24 2.38 2.65 ...
-    ##  $ PercentMarried        : num  52.5 44.5 54.2 52.7 57.8 50.4 54.1 52.7 55.9 50 ...
-    ##  $ PctNoHS18_24          : num  11.5 6.1 24 20.2 14.9 29.9 26.1 27.3 34.7 15.6 ...
-    ##  $ PctHS18_24            : num  39.5 22.4 36.6 41.2 43 35.1 41.4 33.9 39.4 36.3 ...
-    ##  $ PctBachDeg18_24       : num  6.9 7.5 9.5 2.5 2 4.5 5.8 2.2 1.4 7.1 ...
-    ##  $ PctHS25_Over          : num  23.2 26 29 31.6 33.4 30.4 29.8 31.6 32.2 28.8 ...
-    ##  $ PctBachDeg25_Over     : num  19.6 22.7 16 9.3 15 11.9 11.9 11.3 12 16.2 ...
-    ##  $ PctUnemployed16_Over  : num  8 7.8 7 12.1 4.8 12.9 8.9 8.9 10.3 9.2 ...
-    ##  $ PctPrivateCoverage    : num  75.1 70.2 63.7 58.4 61.6 60 49.5 55.8 55.5 69.9 ...
-    ##  $ PctEmpPrivCoverage    : num  41.6 43.6 34.9 35 35.1 32.6 28.3 25.9 29.9 44.4 ...
-    ##  $ PctPublicCoverage     : num  32.9 31.1 42.1 45.3 44 43.2 46.4 50.9 48.1 31.4 ...
-    ##  $ PctPublicCoverageAlone: num  14 15.3 21.1 25 22.7 20.2 28.7 24.1 26.6 16.5 ...
-    ##  $ PctWhite              : num  81.8 89.2 90.9 91.7 94.1 ...
-    ##  $ PctBlack              : num  2.595 0.969 0.74 0.783 0.27 ...
-    ##  $ PctAsian              : num  4.822 2.246 0.466 1.161 0.666 ...
-    ##  $ PctMarriedHouseholds  : num  52.9 45.4 54.4 51 54 ...
-    ##  $ BirthRate             : num  6.12 4.33 3.73 4.6 6.8 ...
-
-``` r
-colnames(cancer_x)
-```
-
-    ##  [1] "avgAnnCount"            "avgDeathsPerYear"      
-    ##  [3] "incidenceRate"          "medIncome"             
-    ##  [5] "popEst2015"             "povertyPercent"        
-    ##  [7] "MedianAge"              "MedianAgeMale"         
-    ##  [9] "MedianAgeFemale"        "AvgHouseholdSize"      
-    ## [11] "PercentMarried"         "PctNoHS18_24"          
-    ## [13] "PctHS18_24"             "PctBachDeg18_24"       
-    ## [15] "PctHS25_Over"           "PctBachDeg25_Over"     
-    ## [17] "PctUnemployed16_Over"   "PctPrivateCoverage"    
-    ## [19] "PctEmpPrivCoverage"     "PctPublicCoverage"     
-    ## [21] "PctPublicCoverageAlone" "PctWhite"              
-    ## [23] "PctBlack"               "PctAsian"              
-    ## [25] "PctMarriedHouseholds"   "BirthRate"
+    ##  [1] "incidence_rate"             "med_income"                
+    ##  [3] "pop_est2015"                "poverty_percent"           
+    ##  [5] "study_per_cap"              "median_age"                
+    ##  [7] "median_age_male"            "median_age_female"         
+    ##  [9] "avg_household_size"         "percent_married"           
+    ## [11] "pct_no_hs18_24"             "pct_hs18_24"               
+    ## [13] "pct_bach_deg18_24"          "pct_hs25_over"             
+    ## [15] "pct_bach_deg25_over"        "pct_employed16_over"       
+    ## [17] "pct_unemployed16_over"      "pct_private_coverage"      
+    ## [19] "pct_private_coverage_alone" "pct_emp_priv_coverage"     
+    ## [21] "pct_public_coverage"        "pct_public_coverage_alone" 
+    ## [23] "pct_white"                  "pct_black"                 
+    ## [25] "pct_married_households"     "birth_rate"                
+    ## [27] "region_w"                   "region_sw"                 
+    ## [29] "region_me"                  "region_se"
 
 16, 21, 3, 6, 15, 17, 13, 25, 18, 23
 
 PctBachDeg25\_Over, PctPublicCoverageAlone, incidenceRate, povertyPercent, PctHS25\_Over, PctUnemployed16\_Over, PctHS18\_24, PctMarriedHouseholds, PctPrivateCoverage, PctBlack
 
 ``` r
-fit_1 = lm(TARGET_deathRate ~ PctBachDeg25_Over + PctPublicCoverageAlone + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_private_coverage_alone + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
 
 summary(fit_1)
 ```
 
     ## 
     ## Call:
-    ## lm(formula = TARGET_deathRate ~ PctBachDeg25_Over + PctPublicCoverageAlone + 
-    ##     incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + 
-    ##     PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + 
-    ##     PctBlack, data = cancer_data)
+    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + region_w + 
+    ##     pct_public_coverage_alone + region_se + pct_private_coverage_alone + 
+    ##     pct_emp_priv_coverage + pct_married_households + median_age_female + 
+    ##     pct_hs18_24 + birth_rate, data = d)
     ## 
     ## Residuals:
     ##      Min       1Q   Median       3Q      Max 
-    ## -107.299  -11.456    0.117   11.382  141.778 
+    ## -102.562  -12.499    0.478   12.116  153.936 
     ## 
     ## Coefficients:
-    ##                        Estimate Std. Error t value Pr(>|t|)    
-    ## (Intercept)            81.89738   10.66060   7.682 2.09e-14 ***
-    ## PctBachDeg25_Over      -0.90727    0.13829  -6.561 6.27e-11 ***
-    ## PctPublicCoverageAlone  0.05341    0.14400   0.371 0.710740    
-    ## incidenceRate           0.20786    0.00718  28.948  < 2e-16 ***
-    ## povertyPercent          0.55583    0.12352   4.500 7.05e-06 ***
-    ## PctHS25_Over            0.55832    0.08873   6.292 3.58e-10 ***
-    ## PctUnemployed16_Over    0.53326    0.15236   3.500 0.000472 ***
-    ## PctHS18_24              0.26736    0.04674   5.720 1.17e-08 ***
-    ## PctMarriedHouseholds   -0.31801    0.08085  -3.933 8.57e-05 ***
-    ## PctPrivateCoverage     -0.18391    0.09068  -2.028 0.042640 *  
-    ## PctBlack                0.04243    0.03260   1.301 0.193189    
+    ##                              Estimate Std. Error t value Pr(>|t|)    
+    ## (Intercept)                197.888188   8.065103  24.536  < 2e-16 ***
+    ## pct_bach_deg25_over         -1.659772   0.105354 -15.754  < 2e-16 ***
+    ## region_w                   -12.138212   1.356607  -8.947  < 2e-16 ***
+    ## pct_public_coverage_alone    0.894531   0.115647   7.735 1.40e-14 ***
+    ## region_se                    8.618818   0.929719   9.270  < 2e-16 ***
+    ## pct_private_coverage_alone  -0.004869   0.019855  -0.245   0.8063    
+    ## pct_emp_priv_coverage        0.457092   0.068613   6.662 3.20e-11 ***
+    ## pct_married_households      -0.736739   0.074327  -9.912  < 2e-16 ***
+    ## median_age_female           -0.150939   0.083924  -1.799   0.0722 .  
+    ## pct_hs18_24                  0.411563   0.049452   8.323  < 2e-16 ***
+    ## birth_rate                  -0.879162   0.208664  -4.213 2.59e-05 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
     ## 
-    ## Residual standard error: 19.85 on 3036 degrees of freedom
-    ## Multiple R-squared:   0.49,  Adjusted R-squared:  0.4883 
-    ## F-statistic: 291.7 on 10 and 3036 DF,  p-value: < 2.2e-16
+    ## Residual standard error: 21.73 on 3036 degrees of freedom
+    ## Multiple R-squared:  0.3888, Adjusted R-squared:  0.3868 
+    ## F-statistic: 193.2 on 10 and 3036 DF,  p-value: < 2.2e-16
 
 ``` r
-fit_2 = lm(TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
 
 summary(fit_2)
 ```
 
     ## 
     ## Call:
-    ## lm(formula = TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + 
-    ##     povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + 
-    ##     PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + region_w + 
+    ##     pct_public_coverage_alone + region_se + pct_emp_priv_coverage + 
+    ##     pct_married_households + median_age_female + pct_hs18_24 + 
+    ##     birth_rate, data = d)
     ## 
     ## Residuals:
     ##      Min       1Q   Median       3Q      Max 
-    ## -107.725  -11.383    0.145   11.348  141.892 
+    ## -102.574  -12.519    0.471   12.106  153.880 
     ## 
     ## Coefficients:
-    ##                       Estimate Std. Error t value Pr(>|t|)    
-    ## (Intercept)          83.947793   9.113901   9.211  < 2e-16 ***
-    ## PctBachDeg25_Over    -0.908517   0.138228  -6.573 5.80e-11 ***
-    ## incidenceRate         0.208352   0.007054  29.538  < 2e-16 ***
-    ## povertyPercent        0.562219   0.122296   4.597 4.46e-06 ***
-    ## PctHS25_Over          0.562715   0.087930   6.400 1.80e-10 ***
-    ## PctUnemployed16_Over  0.544720   0.149174   3.652 0.000265 ***
-    ## PctHS18_24            0.267054   0.046725   5.715 1.20e-08 ***
-    ## PctMarriedHouseholds -0.322280   0.080015  -4.028 5.77e-05 ***
-    ## PctPrivateCoverage   -0.204618   0.071454  -2.864 0.004217 ** 
-    ## PctBlack              0.040549   0.032198   1.259 0.207996    
+    ##                            Estimate Std. Error t value Pr(>|t|)    
+    ## (Intercept)               197.80118    8.05605  24.553  < 2e-16 ***
+    ## pct_bach_deg25_over        -1.65980    0.10534 -15.757  < 2e-16 ***
+    ## region_w                  -12.14321    1.35624  -8.954  < 2e-16 ***
+    ## pct_public_coverage_alone   0.89648    0.11536   7.771 1.05e-14 ***
+    ## region_se                   8.60858    0.92864   9.270  < 2e-16 ***
+    ## pct_emp_priv_coverage       0.45389    0.06735   6.740 1.89e-11 ***
+    ## pct_married_households     -0.73671    0.07432  -9.913  < 2e-16 ***
+    ## median_age_female          -0.15088    0.08391  -1.798   0.0723 .  
+    ## pct_hs18_24                 0.41167    0.04944   8.326  < 2e-16 ***
+    ## birth_rate                 -0.88093    0.20851  -4.225 2.46e-05 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
     ## 
-    ## Residual standard error: 19.85 on 3037 degrees of freedom
-    ## Multiple R-squared:   0.49,  Adjusted R-squared:  0.4885 
-    ## F-statistic: 324.2 on 9 and 3037 DF,  p-value: < 2.2e-16
+    ## Residual standard error: 21.73 on 3037 degrees of freedom
+    ## Multiple R-squared:  0.3888, Adjusted R-squared:  0.387 
+    ## F-statistic: 214.7 on 9 and 3037 DF,  p-value: < 2.2e-16
 
 ``` r
-fit_3 = lm(TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage, data = cancer_data)
+fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + pct_hs18_24 + birth_rate, data = d)
 
 summary(fit_3)
 ```
 
     ## 
     ## Call:
-    ## lm(formula = TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + 
-    ##     povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + 
-    ##     PctMarriedHouseholds + PctPrivateCoverage, data = cancer_data)
+    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + region_w + 
+    ##     pct_public_coverage_alone + region_se + pct_emp_priv_coverage + 
+    ##     pct_married_households + pct_hs18_24 + birth_rate, data = d)
     ## 
     ## Residuals:
     ##      Min       1Q   Median       3Q      Max 
-    ## -108.442  -11.488    0.125   11.499  143.096 
+    ## -102.179  -12.630    0.504   12.186  154.804 
     ## 
     ## Coefficients:
-    ##                       Estimate Std. Error t value Pr(>|t|)    
-    ## (Intercept)          84.426953   9.106834   9.271  < 2e-16 ***
-    ## PctBachDeg25_Over    -0.912803   0.138200  -6.605 4.68e-11 ***
-    ## incidenceRate         0.208509   0.007053  29.562  < 2e-16 ***
-    ## povertyPercent        0.593826   0.119705   4.961 7.41e-07 ***
-    ## PctHS25_Over          0.556037   0.087778   6.335 2.73e-10 ***
-    ## PctUnemployed16_Over  0.581266   0.146339   3.972 7.29e-05 ***
-    ## PctHS18_24            0.269674   0.046683   5.777 8.39e-09 ***
-    ## PctMarriedHouseholds -0.355137   0.075649  -4.695 2.79e-06 ***
-    ## PctPrivateCoverage   -0.190930   0.070629  -2.703   0.0069 ** 
+    ##                            Estimate Std. Error t value Pr(>|t|)    
+    ## (Intercept)               190.18065    6.85367  27.749  < 2e-16 ***
+    ## pct_bach_deg25_over        -1.65268    0.10530 -15.695  < 2e-16 ***
+    ## region_w                  -11.87733    1.34866  -8.807  < 2e-16 ***
+    ## pct_public_coverage_alone   0.92956    0.11392   8.160 4.86e-16 ***
+    ## region_se                   8.79141    0.92339   9.521  < 2e-16 ***
+    ## pct_emp_priv_coverage       0.49429    0.06351   7.783 9.62e-15 ***
+    ## pct_married_households     -0.75880    0.07332 -10.349  < 2e-16 ***
+    ## pct_hs18_24                 0.39680    0.04876   8.137 5.84e-16 ***
+    ## birth_rate                 -0.80589    0.20436  -3.943 8.21e-05 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
     ## 
-    ## Residual standard error: 19.85 on 3038 degrees of freedom
-    ## Multiple R-squared:  0.4897, Adjusted R-squared:  0.4884 
-    ## F-statistic: 364.4 on 8 and 3038 DF,  p-value: < 2.2e-16
+    ## Residual standard error: 21.74 on 3038 degrees of freedom
+    ## Multiple R-squared:  0.3882, Adjusted R-squared:  0.3866 
+    ## F-statistic: 240.9 on 8 and 3038 DF,  p-value: < 2.2e-16

@@ -11,6 +11,23 @@ library(glmnet)
 
 ```{r load_data}
 cancer_data = read.csv(file = "data/Cancer_Registry.csv")
+
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+  janitor::clean_names() %>%
+  mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+  separate(geography, into = c("county", "state"), sep = ", ") %>%
+  mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+  select(-pct_other_race, -pct_asian) %>%
+  mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+  mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+         region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+         region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+         region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0))
+  
+death_data = death_data_full %>%
+  janitor::clean_names() %>%
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, state))
+
 ```
 
 missing data:
@@ -52,12 +69,16 @@ PctHS25_Over PctBachDeg25_Over
 PctWhite PctBlack
 
 ```{r lasso, fig.width=10, fig.height=10}
-cancer_x = cancer_data %>%
-  select(-TARGET_deathRate)
+d = death_data
+
+d[is.na(d)] <- 0
+
+cancer_x = d %>%
+  select(-target_death_rate)
 
 predictor = as.matrix(cancer_x)
 
-target = as.matrix(cancer_data$TARGET_deathRate)
+target = as.matrix(d$target_death_rate)
 
 grid <- 10^seq(2,-2, length=10)
 
@@ -65,8 +86,7 @@ lasso <- cv.glmnet(predictor, target, standardize = TRUE)
 
 plot(lasso$glmnet.fit, "lambda", label=TRUE)
 
-str(cancer_x)
-colnames(cancer_x)
+colnames(predictor)
 ```
 
 16, 21, 3, 6, 15, 17, 13, 25, 18, 23
@@ -76,16 +96,18 @@ PctHS25_Over, PctUnemployed16_Over, PctHS18_24, PctMarriedHouseholds,
 PctPrivateCoverage, PctBlack
 
 ```{r linear}
-fit_1 = lm(TARGET_deathRate ~ PctBachDeg25_Over + PctPublicCoverageAlone + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_private_coverage_alone + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
 
 summary(fit_1)
 
-fit_2 = lm(TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage + PctBlack, data = cancer_data)
+fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
 
 summary(fit_2)
 
-fit_3 = lm(TARGET_deathRate ~ PctBachDeg25_Over + incidenceRate + povertyPercent + PctHS25_Over + PctUnemployed16_Over + PctHS18_24 + PctMarriedHouseholds + PctPrivateCoverage, data = cancer_data)
+fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + pct_hs18_24 + birth_rate, data = d)
 
 summary(fit_3)
+
+
 ```
 
