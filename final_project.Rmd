@@ -234,10 +234,10 @@ reg_cp = lm(target_death_rate ~ incidence_rate + study_per_cap + median_age_fema
            pct_hs18_24 + pct_bach_deg18_24 + 
            pct_hs25_over + pct_employed16_over + pct_unemployed16_over + 
            pct_public_coverage_alone + pct_black + 
-           pct_married_households + birth_rate + race_other + region_sw + 
+           pct_married_households + birth_rate + race_other + region_w + region_sw + 
            region_me + region_se + sex_ratio + pct_aging, data = death_data_3)
 
-summary(reg)
+summary(reg_cp)
 ```
 
 identify outlier

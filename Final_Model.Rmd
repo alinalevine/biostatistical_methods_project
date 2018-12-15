@@ -1,0 +1,105 @@
+---
+title: "Final_Model"
+author: "Yue Gu"
+date: "12/15/2018"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+
+## Data Cleaning
+
+```{r}
+  
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+    janitor::clean_names() %>%
+    mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+    separate(geography, into = c("county", "state"), sep = ", ") %>%
+    mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+    mutate(race_other = pct_other_race + pct_asian) %>%
+    mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>% 
+    mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
+           region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
+           region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
+           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>% 
+   unite(geography,c(county, state), sep = ", ")
+    
+
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  dplyr::select(Areaname,SEX255209D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " "),
+         sex_ratio = SEX255209D) %>% 
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,sex_ratio)
+
+age_data=read_csv("./data/AGE04.csv") %>% 
+  dplyr::select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " "),
+         pct_aging = AGE775208D) %>% 
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,pct_aging)
+
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography") 
+
+death_data_full = death_data_full %>% 
+  separate(geography, c("county","state"), sep = ", ")
+
+death_data =
+  death_data_full %>%
+  janitor::clean_names() %>%
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state)) %>% 
+  mutate(sex_ratio = replace_na(sex_ratio,50.2), pct_aging = replace_na(pct_aging,15.58), pct_private_coverage_alone = replace_na(pct_private_coverage_alone,48.48), pct_employed16_over = replace_na(pct_employed16_over,48.48), median_age = replace_na(median_age,40.82))
+                                                                                                                                    
+                                                                    
+```
+
+
+
+## Stepwise (Automatic Procedure)
+```{r}
+reg_step = lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    poverty_percent + median_age_male + percent_married + pct_hs18_24 + 
+    pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_emp_priv_coverage + 
+    pct_white + pct_black + pct_married_households + birth_rate + 
+    race_other + region_w + region_sw + region_me + region_se + 
+    sex_ratio + pct_aging, data = death_data)
+
+summary(reg_step)
+```
+
+## VIF + CP
+```{r}
+death_data_vif = death_data %>% 
+  dplyr::select(-c(med_income, pct_private_coverage, pct_white, median_age, percent_married, pct_public_coverage, median_age_male, pct_emp_priv_coverage, pct_bach_deg25_over))
+
+
+reg_cp = lm(target_death_rate ~ incidence_rate + study_per_cap + median_age_female + 
+           pct_hs18_24 + pct_bach_deg18_24 + 
+           pct_hs25_over + pct_employed16_over + pct_unemployed16_over + 
+           pct_public_coverage_alone + pct_black + 
+           pct_married_households + birth_rate + race_other + region_w + region_sw + 
+           region_me + region_se + sex_ratio + pct_aging, data = death_data_vif)
+
+summary(reg_cp)
+
+```
+
+## Lasso
+```{r}
+reg_lasso = lm(target_death_rate ~ pct_bach_deg25_over + region_w + poverty_percent + pct_public_coverage_alone + incidence_rate + pct_hs25_over + region_se + pct_unemployed16_over + pct_hs18_24 + sex_ratio + pct_private_coverage + race_other + pct_married_households, data = death_data)
+
+summary(reg_lasso)
+```
+
+
+
