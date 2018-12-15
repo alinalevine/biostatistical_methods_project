@@ -39,8 +39,21 @@ pct other race does not make sense bc race percentages should add up to 100 but 
     janitor::clean_names() %>%
     dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
 
+d = death_data
 
+d[is.na(d)] = 0
+  
+fit = lm(target_death_rate ~ ., data = d)
+summary(fit)
 
+step(fit, data = d)
+summary(lm(formula = target_death_rate ~ med_income + poverty_percent + 
+    median_age_male + median_age_female + percent_married + pct_no_hs18_24 + 
+    pct_hs18_24 + pct_bach_deg18_24 + pct_hs25_over + pct_bach_deg25_over + 
+    pct_employed16_over + pct_unemployed16_over + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_public_coverage_alone + pct_white + 
+    pct_black + pct_married_households + birth_rate + race_other + 
+    region_w + region_se, data = d))
 ```
 
 
