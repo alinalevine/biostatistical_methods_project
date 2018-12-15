@@ -1,0 +1,86 @@
+---
+title: "exploratory"
+author: "Alina Levine"
+date: "December 14, 2018"
+output: html_document
+---
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, results = hide}
+
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+
+death_data_unchanged = read_csv("data/Cancer_Registry.csv") %>%
+    janitor::clean_names()
+
+cont = function(x) {
+tibble(
+        min = min(x),
+        `first quartile` = quantile(x, .25),
+        median = median(x),
+        `third quartial` = quantile(x, .75),
+        iqr = IQR(x),
+        max = max(x))
+}
+```
+
+##Outcome: Target Death Rate
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(death_data_unchanged, aes(x = target_death_rate)) +
+  geom_histogram(bins = 40) +
+  labs(title = "Target Death Rate Distribution",
+        x = "Target Death Rate")
+
+knitr::kable(cont(death_data_unchanged$target_death_rate))
+
+
+```
+
+Target death rate looks approximately normally distributed
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+
+ggplot(death_data_unchanged, aes(x = study_per_cap)) +
+  geom_histogram(bins = 40)
+
+
+```
+
+##Study Per Cap
+
+A huge majority of counties had almost 0 studies per capita, so we decided to turn study_per_cap into a categorical variable. A value of 1 means the county has at least 1 study per capita and 0 means the county has zero counties per capita.
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+study_descriptive = left_join(as.data.frame(prop.table(table(death_data$study_per_cap))), as.data.frame(table(death_data$study_per_cap)), by = "Var1") %>%
+rename(Percentage = Freq.x, Frequency = Freq.y) 
+
+knitr::kable(study_descriptive)
+```
+
+##Race
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+
+{r}
+ggplot(death_data_unchanged, aes(x = pct_white)) +
+  geom_histogram(bins = 40) +
+  labs(title = "Percent White",
+        x = "Percent White") +
+ggplot(death_data_unchanged, aes(x = pct_black)) +
+  geom_histogram(bins = 40) +
+  labs(title = "Percent Black",
+        x = "Percent Black") +
+ggplot(death_data_unchanged, aes(x = pct_asian)) +
+  geom_histogram(bins = 40) +
+  labs(title = "Percent Asian",
+        x = "Percent Asian") +
+ggplot(death_data_unchanged, aes(x = pct_other_race)) +
+  geom_histogram(bins = 40) +
+  labs(title = "Percent Other",
+        x = "Percent Other")
+
+```
+
+Percent white is skewed to the left while percent black, percent Asian, and percent other races are all skewed to the right. White people make up a much larger percent of counties than white , black, and other, but Asian and other races make up the smallest proportion, with the majority of the percentages below 5 percent. We decided to combine Asian and Other races because they make up such a small percentage of counties and because for the most common cancers, their mortalities tend to be lower than both white and black. (https://onlinelibrary.wiley.com/doi/epdf/10.3322/canjclin.55.1.10) 
