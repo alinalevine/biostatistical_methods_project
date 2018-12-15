@@ -13,37 +13,50 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(dplyr)
 library(HH)
-
+library(leaps)
 ```
 
 
-## Read Data
+## Stepwise
+
 ```{r}
-cancer_data = read.csv(file = "data/Cancer_Registry.csv")
 
-cancer_data_tidy =
-  cancer_data %>% 
-  janitor::clean_names() %>% 
-  separate(geography, into = c("county", "state"), sep = ",") %>% 
-  mutate(county = str_replace(county, " County", ""))
-```
 
-## Build model
-```{r}
-anyNA(cancer_data_tidy)
-str(cancer_data_tidy)
+d = death_data
+d[is.na(d)] = 0
 
-# count missing values
-sum(is.na(cancer_data_tidy))
-sum(is.na(cancer_data_tidy$pct_some_col18_24))
-sum(is.na(cancer_data_tidy$pct_employed16_over))
-sum(is.na(cancer_data_tidy$pct_private_coverage_alone))
+fit = lm(target_death_rate ~ ., data = d)
 
-cancer_data_tidy %>%
-  dplyr::select(-binned_inc, -county, -state) %>% 
-  cor()
+step(fit, data = d, direction = "both" )
 
-fit_1 = lm(target_death_rate ~ ., data = cancer_data_tidy)
+## backward
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    poverty_percent + median_age_male + percent_married + pct_no_hs18_24 + 
+    pct_hs18_24 + pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_white + pct_black + pct_married_households + 
+    birth_rate + race_other + region_w + region_sw + region_me + 
+    region_se + sex255209d + age775208d, data = d))
+
+## forward
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    pop_est2015 + poverty_percent + study_per_cap + median_age + 
+    median_age_male + median_age_female + avg_household_size + 
+    percent_married + pct_no_hs18_24 + pct_hs18_24 + pct_bach_deg18_24 + 
+    pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_private_coverage_alone + 
+    pct_emp_priv_coverage + pct_public_coverage + pct_public_coverage_alone + 
+    pct_white + pct_black + pct_married_households + birth_rate + 
+    race_other + region_w + region_sw + region_me + region_se + 
+    sex255209d + age775208d, data = d))
+## both
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    poverty_percent + median_age_male + percent_married + pct_no_hs18_24 + 
+    pct_hs18_24 + pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_white + pct_black + pct_married_households + 
+    birth_rate + race_other + region_w + region_sw + region_me + 
+    region_se + sex255209d + age775208d, data = d))
 ```
 
 

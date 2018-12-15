@@ -23,7 +23,7 @@ pct other race does not make sense bc race percentages should add up to 100 but 
 
 ```{r}
   
-  death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
     janitor::clean_names() %>%
     mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
     separate(geography, into = c("county", "state"), sep = ", ") %>%
@@ -33,12 +33,40 @@ pct other race does not make sense bc race percentages should add up to 100 but 
     mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0),
            region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0),
            region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0),
-           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0))
+           region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>% 
+   unite(geography,c(county, state), sep = ", ")
     
-  death_data = death_data_full %>%
+cancer_data = read_csv("./data/Cancer_Registry.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(study_per_cap = ifelse(study_per_cap == 0, 0, 1),
+         mortality = avg_deaths_per_year/pop_est2015,
+         geography = ifelse(str_detect(geography, "County") == TRUE,geography,str_replace(geography, ","," County,")),
+         geography = str_replace(geography,"city"," City"),
+         race_nonwhite = pct_asian + pct_other_race + pct_black)
+         #race_nonwhite = ifelse(race_white >= 50,0,1))
+
+sex_data = read_csv("./data/SEX01.csv") %>% 
+  dplyr::select(Areaname,SEX255209D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+
+age_data=read_csv("./data/AGE04.csv") %>% 
+  dplyr::select(Areaname,AGE775208D) %>% 
+  separate(Areaname, c("county","state"), sep = ", ") %>% 
+  na.omit() %>% 
+  mutate(county = paste(county,"County", sep = " ")) %>% 
+  unite(geography,c(county, state), sep = ", ")
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography") 
+
+death_data_full = death_data_full %>% 
+  separate(geography, c("county","state"), sep = ", ")
+
+death_data = death_data_full %>%
     janitor::clean_names() %>%
     dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
-
 
 
 ```
@@ -114,7 +142,7 @@ vif(fit_full_1)
 #pct_employed16_over has high vif, pct_private_coverage_alone
 
 death_data_2 = death_data_1 %>%
-  dplyr::select(-c(pct_white, median_age_female, median_age_male, pct_married_households, pct_private_coverage_alone, pct_employed16_over))
+  dplyr::select(-c(pct_white, median_age_female, median_age_male, pct_married_households, pct_private_coverage_alone, pct_employed16_over, median_age))
 
 fit_full_2 = lm(target_death_rate ~., data = death_data_2)
 
@@ -126,7 +154,7 @@ vif(fit_full_2)
 
 
 death_data_3 = death_data_2 %>%
-  dplyr::select(-c(pct_public_coverage, pct_bach_deg25_over))
+  dplyr::select(-c(pct_public_coverage))
   
 
 fit_full_3 = lm(target_death_rate ~., data = death_data_3)
@@ -206,6 +234,12 @@ best <- function(model, ...)
 }  
 
 View(best(fit_full_3))
+
+View(best(fit_full_1))
+
+View(best(fit_full_2))
+
+View(best(fit_full_3)[16,])
 ```
 
 the cp is minimized and adjusted r squared is maximimized in the following model:
@@ -226,4 +260,8 @@ step_result = lm(formula = target_death_rate ~ incidence_rate + poverty_percent 
 summary(step_result)
 ```
 
+
+```{r}
+
+```
 
