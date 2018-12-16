@@ -13,6 +13,14 @@ library("leaps")
 library(caret) 
 library(modelr)
 library(glmnet)
+
+best <- function(model, ...)  { 
+  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)),
+                        which, rss, rsq, adjr2, cp, bic))  
+  return(subsets) 
+}  
 ```
 
 ### Tidy Data
@@ -21,7 +29,7 @@ library(glmnet)
 # recode original data
 death_data_full = read_csv("data/Cancer_Registry.csv") %>%
   janitor::clean_names() %>% 
-  mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+  mutate(median_age = ifelse(median_age > 60, NA, median_age)) %>%
   separate(geography, into = c("county", "state"), sep = ", ") %>%
   mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
   mutate(race_other = pct_other_race + pct_asian) %>% 
@@ -64,9 +72,9 @@ death_data = death_data_full %>%
   dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race, state)) %>%
   mutate(sex_ratio = replace_na(sex_ratio,50.2), 
          pct_aging = replace_na(pct_aging,15.58),
-         pct_private_coverage_alone=replace_na(pct_private_coverage_alone,48.48), 
-         pct_employed16_over=replace_na(pct_employed16_over,48.48),
-         median_age=replace_na(median_age,40.82)) 
+         pct_private_coverage_alone = replace_na(pct_private_coverage_alone,48.48), 
+         pct_employed16_over = replace_na(pct_employed16_over,48.48),
+         median_age = replace_na(median_age,40.82)) 
 ```
 
 ###exploratory plot
@@ -134,7 +142,7 @@ summary(lm(formula = target_death_rate ~ incidence_rate + med_income +
     sex_ratio + pct_aging, data = death_data))
 ```
  
-###Selection with VIF
+###Selection with VIF and CP criterion
 
 ```{r}
 death_data_1 = death_data %>%
@@ -162,6 +170,21 @@ fit_full_3 = lm(target_death_rate ~., data = death_data_3)
 vif(fit_full_3)
 
 summary(fit_full_3)
+
+knitr::kable(best(fit_full_3)) 
+
+vif_data = death_data %>% 
+  dplyr::select(-c(med_income, pct_private_coverage, pct_white, median_age, percent_married, pct_public_coverage, median_age_male, pct_emp_priv_coverage, pct_bach_deg25_over)) %>% data.frame()
+
+leaps(x = vif_data[,2:25], y = vif_data[,1], nbest = 2,method = "Cp")
+leaps(x = vif_data[,2:25], y = vif_data[,1], nbest = 2, method = "adjr2")
+b = regsubsets(target_death_rate ~ .,nvmax = NULL, data = vif_data)
+   (rs = summary(b))
+
+par(mar = c(4,4,1,1))
+par(mfrow = c(1,2))
+plot(2:25, rs$cp, xlab = "No of parameters", ylab = "Cp Statistic")
+plot(2:25, rs$adjr2, xlab = "No of parameters", ylab = "Adj R2")
 ```
 
 ### LSSO
@@ -170,7 +193,7 @@ summary(fit_full_3)
 d = death_data
 
 cancer_x = d %>%
-  dplyr::select(- target_death_rate)
+  dplyr::select(-target_death_rate)
 
 predictor = as.matrix(cancer_x)
 
@@ -180,7 +203,7 @@ grid <- 10^seq(-0.1,0, length = 30)
 
 lasso <- cv.glmnet(predictor, target, standardize = TRUE, lambda = grid)
 
-plot(lasso$glmnet.fit, "lambda", label=TRUE)
+plot(lasso$glmnet.fit, "lambda", label = TRUE)
 
 colnames(predictor)
 
@@ -217,23 +240,11 @@ region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent
  pct_married_households + sex_ratio + race_other + pct_private_coverage, data = d)
 
 summary(fit)
+
+
 ```
 
-### Criterion Selection
-
-```{r}
-best <- function(model, ...)  { 
-  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
-  subsets <- with(summary(subsets),
-                  cbind(p = as.numeric(rownames(which)),
-                        which, rss, rsq, adjr2, cp, bic))  
-  return(subsets) 
-}   
-
-knitr::kable(best(fit_full_3)) 
-```
-
-### Best Subsets
+###Best Subsets
 
 ####Stepwise
 
@@ -303,7 +314,26 @@ influence.measures(step_reg)
 
 death_data %>% 
   mutate(fitted_value = predict(step_reg)) %>%
-  filter(fitted_value>300)
+  filter(fitted_value > 300)
+
+stu_res = rstandard(vif_reg)  
+outliers_y = stu_res[abs(stu_res) > 2.5] 
+outliers_y  
+brand.hat = hatvalues(vif_reg) 
+brand.hat[brand.hat > 0.2] 
+brand.hat[brand.hat > 2*17/3059]  
+
+influence.measures(vif_reg)  
+
+stu_res = rstandard(lasso_reg)  
+outliers_y = stu_res[abs(stu_res) > 2.5] 
+outliers_y  
+brand.hat = hatvalues(lasso_reg) 
+brand.hat[brand.hat > 0.2] 
+brand.hat[brand.hat > 2*17/3059]  
+
+influence.measures(step_reg)  
+
 ```
 
 
@@ -314,12 +344,15 @@ death_data %>%
 ```{r}
 set.seed(1) 
 data_train = trainControl(method = "cv", number = 10) 
-model_caret = train(target_death_rate ~ pct_bach_deg25_over + region_w +
-                      poverty_percent + pct_public_coverage_alone +
-                      incidence_rate + pct_hs25_over + region_se +
-                      pct_unemployed16_over + pct_hs18_24 + sex_ratio +
-                      pct_private_coverage + race_other +
-                      pct_married_households, 
+model_caret = train(target_death_rate ~ incidence_rate + med_income +
+                      poverty_percent + median_age_male + 
+                      percent_married +
+                      pct_hs18_24 + pct_hs25_over + pct_bach_deg25_over +
+                      pct_employed16_over + pct_unemployed16_over + 
+                      pct_private_coverage + pct_emp_priv_coverage + 
+                      pct_white + pct_black + pct_married_households +
+                      birth_rate + race_other + region_w + region_sw +
+                      region_me + region_se + sex_ratio + pct_aging, 
                     data = death_data,
                     trControl = data_train, 
                     method = 'lm', na.action = na.pass) 
@@ -333,13 +366,14 @@ model_caret$finalModel
 ```{r}
 set.seed(1) 
 data_train = trainControl(method = "cv", number = 10) 
-model_caret = train(target_death_rate ~ incidence_rate +
-                      poverty_percent+ avg_household_size +
-                      percent_married + pct_hs18_24+ pct_bach_deg18_24 +
-                      pct_hs25_over + pct_unemployed16_over + 
-                      pct_public_coverage_alone + pct_black + 
-                      birth_rate + race_other + region_w + region_sw +
-                      region_me + region_se + sex_ratio+pct_aging, 
+model_caret = train(target_death_rate ~ incidence_rate + 
+                      study_per_cap + median_age_female + 
+                      pct_hs18_24 + pct_bach_deg18_24 + 
+                      pct_hs25_over + pct_employed16_over +
+                      pct_unemployed16_over + pct_public_coverage_alone +
+                      pct_black + pct_married_households + birth_rate +
+                      race_other + region_w + region_sw + region_me+
+                      region_se + sex_ratio + pct_aging,
                     data = death_data, 
                     trControl = data_train, 
                     method = 'lm', 
@@ -354,15 +388,12 @@ model_caret$finalModel
 ```{r}
 set.seed(1) 
 data_train = trainControl(method = "cv", number = 10) 
-model_caret = train(target_death_rate ~ incidence_rate +
-                      median_age_female+ poverty_percent+
-                      avg_household_size + percent_married +
-                      pct_employed16_over+ pct_bach_deg18_24 +
-                      pct_hs25_over + pct_unemployed16_over + 
-                      pct_public_coverage_alone +  pct_black +
-                      pct_married_households + birth_rate + race_other +
-                      region_w + region_sw + region_me + region_se +
-                      sex_ratio+pct_aging, 
+model_caret = train(target_death_rate ~ pct_bach_deg25_over + region_w +
+                      poverty_percent + pct_public_coverage_alone +
+                      incidence_rate + pct_hs25_over + region_se +
+                      pct_unemployed16_over + pct_hs18_24 + sex_ratio +
+                      pct_private_coverage + race_other +
+                      pct_married_households,
                     data = death_data, 
                     trControl = data_train, 
                     method = 'lm', 
@@ -375,7 +406,7 @@ model_caret$finalModel
 ### RMSE Comparison
 
 ```{r}
-cv_df = crossv_kfold(death_data, k=10) %>%
+cv_df = crossv_kfold(death_data, k = 10) %>%
   mutate(train = map(train, as_tibble), 
          test = map(test, as_tibble))  
 cv_df =  cv_df %>%  
