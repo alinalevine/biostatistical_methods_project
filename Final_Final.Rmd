@@ -189,7 +189,7 @@ plot(2:25, rs$adjr2, xlab = "No of parameters", ylab = "Adj R2")
 
 ### LSSO
 
-```{r lasso, fig.width=10, fig.height=30}
+```{r lasso, fig.width=10, fig.height=10}
 d = death_data
 
 cancer_x = d %>%
@@ -199,41 +199,22 @@ predictor = as.matrix(cancer_x)
 
 target = as.matrix(d$target_death_rate)
 
-grid <- 10^seq(-0.1,0, length = 30)
+train<-sample(1:3059,2753)
+
+test<-(-train)
+
+cv.out<-cv.glmnet(predictor[train,],target[train])
+plot(cv.out)
+
+best.lambda<-cv.out$lambda.min
+
+grid <- 10^seq(-2,2, length = 30)
 
 lasso <- cv.glmnet(predictor, target, standardize = TRUE, lambda = grid)
 
 plot(lasso$glmnet.fit, "lambda", label = TRUE)
 
 colnames(predictor)
-
-fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + pct_public_coverage_alone +
-region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
-pct_married_households + sex_ratio + race_other + pct_private_coverage +
-pct_aging + birth_rate + pct_employed16_over, data = d)
-
-summary(fit_1)
-
-fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
-region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
-pct_married_households + sex_ratio + race_other + pct_private_coverage +
-pct_aging + birth_rate + pct_employed16_over, data = d)
-
-summary(fit_2)
-
-fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
-region_w + pct_hs18_24 + pct_hs25_over + poverty_percent + region_se +
-pct_married_households + sex_ratio + race_other + pct_private_coverage +
-pct_aging + birth_rate + pct_employed16_over, data = d)
-
-summary(fit_3)
-
-fit_4 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
-region_w + pct_hs18_24 + pct_hs25_over + region_se +
-pct_married_households + sex_ratio + race_other + pct_private_coverage +
-pct_aging + birth_rate + pct_employed16_over, data = d)
-
-summary(fit_4)
 
 fit = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate +
 region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
