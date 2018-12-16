@@ -1,0 +1,398 @@
+---
+title: "Untitled"
+author: "haokun yuan"
+date: "12/16/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse) 
+library(ggplot2) 
+library(HH) 
+library("leaps") 
+library(caret) 
+library(modelr)
+library(glmnet)
+```
+
+### Tidy Data
+
+```{r}
+# recode original data
+death_data_full = read_csv("data/Cancer_Registry.csv") %>%
+  janitor::clean_names() %>% 
+  mutate(median_age = ifelse(median_age >60, NA, median_age)) %>%
+  separate(geography, into = c("county", "state"), sep = ", ") %>%
+  mutate(study_per_cap = ifelse(study_per_cap == 0,0,1)) %>%
+  mutate(race_other = pct_other_race + pct_asian) %>% 
+  mutate(state = ifelse(state == "District of Columbia", "DC", state.abb[match(state, state.name)])) %>%
+  mutate(region_w = ifelse(state == "WA" | state == "MT" | state == "ID" | state == "OR" | state == "WY" | state == "NV" | state == "UT" | state == "CO" | state == "CA", 1, 0), 
+         region_sw = ifelse(state == "AZ" | state == "NM" | state == "TX" | state == "OK", 1, 0), 
+         region_me = ifelse(state == "ND" | state == "SD" | state == "NE" | state == "KS" | state == "MN" | state == "IA" | state == "MO" | state == "WI" | state == "IL" | state == "MI" | state == "IN" | state == "OH", 1, 0), 
+         region_se = ifelse(state == "AR" | state == "LA" | state == "MS" | state == "AL" | state == "GA" | state == "FL" | state == "SC" | state == "NC" | state == "TN" | state == "KY" | state == "VA" | state == "WV" | state == "MD" | state == "DC" , 1, 0)) %>%  
+  unite(geography,c(county, state), sep = ", ")   
+
+# sex ratio data
+sex_data = read_csv("./data/SEX01.csv") %>%
+  dplyr::select(Areaname,SEX255209D) %>%  
+  separate(Areaname, c("county","state"), sep = ", ") %>%  
+  na.omit() %>%  
+  mutate(county = paste(county,"County", sep = " "), 
+         sex_ratio = SEX255209D) %>%  
+  unite(geography,c(county, state), sep = ", ") %>%
+  dplyr::select(geography,sex_ratio)  
+
+# pct population age > 60
+age_data = read_csv("./data/AGE04.csv") %>%
+  dplyr::select(Areaname,AGE775208D) %>%  
+  separate(Areaname, c("county","state"), sep = ", ") %>%  
+  na.omit() %>%  
+  mutate(county = paste(county,"County", sep = " "), 
+         pct_aging = AGE775208D) %>%  
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,pct_aging)  
+
+#join dataset
+cancer_1 = left_join(death_data_full,sex_data,by = "geography")
+death_data_full = left_join(cancer_1,age_data,by = "geography")   
+
+   
+# replace missing variable
+death_data = death_data_full %>%
+  separate(geography, c("county","state"), sep = ", ") %>%
+  janitor::clean_names() %>%
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race, state)) %>%
+  mutate(sex_ratio = replace_na(sex_ratio,50.2), 
+         pct_aging = replace_na(pct_aging,15.58),
+         pct_private_coverage_alone=replace_na(pct_private_coverage_alone,48.48), 
+         pct_employed16_over=replace_na(pct_employed16_over,48.48),
+         median_age=replace_na(median_age,40.82)) 
+```
+
+###exploratory plot
+
+```{r}
+ggplot(death_data_full, aes(x = target_death_rate)) + 
+  geom_histogram()  
+
+ggplot(data = death_data_full, aes( x= med_income, y = target_death_rate)) + geom_point() 
+#should I add a polynomial term for this   
+
+ggplot(data = death_data_full, aes( x= median_age, y = target_death_rate)) + geom_point()  
+
+#age does not look related unless there are confounders for age    
+
+ggplot(data = death_data_full, aes( x = median_age, y = target_death_rate)) + 
+  geom_point()   
+
+ggplot(data = death_data_full, aes( x = pct_black, y = target_death_rate)) + geom_point()   
+
+ggplot(data = death_data_full, aes( x = pct_white, y = target_death_rate)) + geom_point()   
+
+ggplot(data = death_data_full, aes( x = pct_unemployed16_over, y = target_death_rate)) + 
+  geom_point()    
+
+ggplot(data = death_data_full, aes( x = pct_bach_deg18_24, y = target_death_rate)) + 
+  geom_point()  
+```
+
+###Automatic Selection
+
+```{r}
+fit = lm(target_death_rate ~ ., data = death_data)
+
+step(fit, data = death_data, direction = "both" )
+
+## backward
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    poverty_percent + median_age_male + percent_married + pct_hs18_24 + 
+    pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_emp_priv_coverage + 
+    pct_white + pct_black + pct_married_households + birth_rate + 
+    race_other + region_w + region_sw + region_me + region_se + 
+    sex_ratio + pct_aging, data = death_data))
+
+## forward
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    pop_est2015 + poverty_percent + study_per_cap + median_age + 
+    median_age_male + median_age_female + avg_household_size + 
+    percent_married + pct_no_hs18_24 + pct_hs18_24 + pct_bach_deg18_24 + 
+    pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_private_coverage_alone + 
+    pct_emp_priv_coverage + pct_public_coverage + pct_public_coverage_alone + 
+    pct_white + pct_black + pct_married_households + birth_rate + 
+    race_other + region_w + region_sw + region_me + region_se + 
+    sex_ratio + pct_aging, data = death_data))
+
+## both
+summary(lm(formula = target_death_rate ~ incidence_rate + med_income + 
+    poverty_percent + median_age_male + percent_married + pct_hs18_24 + 
+    pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + 
+    pct_unemployed16_over + pct_private_coverage + pct_emp_priv_coverage + 
+    pct_white + pct_black + pct_married_households + birth_rate + 
+    race_other + region_w + region_sw + region_me + region_se + 
+    sex_ratio + pct_aging, data = death_data))
+```
+ 
+###Selection with VIF
+
+```{r}
+death_data_1 = death_data %>%
+  dplyr::select(-c(med_income, pct_private_coverage))
+
+fit_full_1 = lm(target_death_rate ~., data = death_data_1)
+
+vif(fit_full_1)
+
+## Delete varibles with high vif
+death_data_2 = death_data_1 %>%
+  dplyr::select(-c(pct_white, median_age, percent_married, pct_public_coverage, median_age_male))
+
+fit_full_2 = lm(target_death_rate ~., data = death_data_2)
+
+vif(fit_full_2)
+
+## Delete variables with vif > 5, keep poverty_percent since it provided more information
+death_data_3 = death_data_2 %>%
+  dplyr::select(-c(pct_emp_priv_coverage, pct_bach_deg25_over ))
+  
+
+fit_full_3 = lm(target_death_rate ~., data = death_data_3)
+
+vif(fit_full_3)
+
+summary(fit_full_3)
+```
+
+### LSSO
+
+```{r lasso, fig.width=10, fig.height=30}
+d = death_data
+
+cancer_x = d %>%
+  dplyr::select(- target_death_rate)
+
+predictor = as.matrix(cancer_x)
+
+target = as.matrix(d$target_death_rate)
+
+grid <- 10^seq(-0.1,0, length = 30)
+
+lasso <- cv.glmnet(predictor, target, standardize = TRUE, lambda = grid)
+
+plot(lasso$glmnet.fit, "lambda", label=TRUE)
+
+colnames(predictor)
+
+fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + pct_public_coverage_alone +
+region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
+pct_married_households + sex_ratio + race_other + pct_private_coverage +
+pct_aging + birth_rate + pct_employed16_over, data = d)
+
+summary(fit_1)
+
+fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
+region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
+pct_married_households + sex_ratio + race_other + pct_private_coverage +
+pct_aging + birth_rate + pct_employed16_over, data = d)
+
+summary(fit_2)
+
+fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
+region_w + pct_hs18_24 + pct_hs25_over + poverty_percent + region_se +
+pct_married_households + sex_ratio + race_other + pct_private_coverage +
+pct_aging + birth_rate + pct_employed16_over, data = d)
+
+summary(fit_3)
+
+fit_4 = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
+region_w + pct_hs18_24 + pct_hs25_over + region_se +
+pct_married_households + sex_ratio + race_other + pct_private_coverage +
+pct_aging + birth_rate + pct_employed16_over, data = d)
+
+summary(fit_4)
+
+fit = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate +
+region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
+ pct_married_households + sex_ratio + race_other + pct_private_coverage, data = d)
+
+summary(fit)
+```
+
+### Criterion Selection
+
+```{r}
+best <- function(model, ...)  { 
+  subsets <- regsubsets(formula(model), model.frame(model),nvmax = NULL, ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)),
+                        which, rss, rsq, adjr2, cp, bic))  
+  return(subsets) 
+}   
+
+knitr::kable(best(fit_full_3)) 
+```
+
+### Best Subsets
+
+####Stepwise
+
+```{r}
+step_reg = lm(formula = target_death_rate ~ incidence_rate + med_income +
+                poverty_percent + median_age_male + percent_married +
+                pct_hs18_24 + pct_hs25_over + pct_bach_deg25_over +
+                pct_employed16_over + pct_unemployed16_over + 
+                pct_private_coverage + pct_emp_priv_coverage + 
+                pct_white + pct_black + pct_married_households +
+                birth_rate + race_other + region_w + region_sw +
+                region_me + region_se + sex_ratio + pct_aging, 
+              data = death_data)
+
+summary(step_reg)
+```
+
+####VIF
+
+```{r}
+death_data_vif = death_data %>% 
+  dplyr::select(-c(med_income, pct_private_coverage, pct_white, median_age, percent_married, pct_public_coverage, median_age_male, pct_emp_priv_coverage, pct_bach_deg25_over))
+
+
+vif_reg = lm(target_death_rate ~ incidence_rate + study_per_cap +
+              median_age_female + pct_hs18_24 + pct_bach_deg18_24 + 
+              pct_hs25_over + pct_employed16_over + 
+              pct_unemployed16_over + pct_public_coverage_alone +
+              pct_black + pct_married_households + birth_rate +
+              race_other + region_w + region_sw + region_me + region_se +
+              sex_ratio + pct_aging, data = death_data_vif)
+
+summary(vif_reg)
+```
+
+#### Lasso 
+
+```{r}
+lasso_reg = lm(target_death_rate ~ pct_bach_deg25_over + region_w +
+                 poverty_percent + pct_public_coverage_alone +
+                 incidence_rate + pct_hs25_over + region_se +
+                 pct_unemployed16_over + pct_hs18_24 + sex_ratio +
+                 pct_private_coverage + race_other +
+                 pct_married_households, data = death_data)
+```
+
+###Model Diagnosis
+```{r}
+plot(step_reg)
+
+plot(vif_reg)
+
+plot(lasso_reg)
+```
+
+### Outliers and Influential points
+
+```{r}
+stu_res = rstandard(step_reg)  
+outliers_y = stu_res[abs(stu_res) > 2.5] 
+outliers_y  
+brand.hat = hatvalues(step_reg) 
+brand.hat[brand.hat > 0.2] 
+brand.hat[brand.hat > 2*17/3059]  
+
+influence.measures(step_reg)  
+
+death_data %>% 
+  mutate(fitted_value = predict(step_reg)) %>%
+  filter(fitted_value>300)
+```
+
+
+###Cross Validation
+
+####Stepwise
+
+```{r}
+set.seed(1) 
+data_train = trainControl(method = "cv", number = 10) 
+model_caret = train(target_death_rate ~ pct_bach_deg25_over + region_w +
+                      poverty_percent + pct_public_coverage_alone +
+                      incidence_rate + pct_hs25_over + region_se +
+                      pct_unemployed16_over + pct_hs18_24 + sex_ratio +
+                      pct_private_coverage + race_other +
+                      pct_married_households, 
+                    data = death_data,
+                    trControl = data_train, 
+                    method = 'lm', na.action = na.pass) 
+
+model_caret 
+model_caret$finalModel
+```
+
+####VIF
+
+```{r}
+set.seed(1) 
+data_train = trainControl(method = "cv", number = 10) 
+model_caret = train(target_death_rate ~ incidence_rate +
+                      poverty_percent+ avg_household_size +
+                      percent_married + pct_hs18_24+ pct_bach_deg18_24 +
+                      pct_hs25_over + pct_unemployed16_over + 
+                      pct_public_coverage_alone + pct_black + 
+                      birth_rate + race_other + region_w + region_sw +
+                      region_me + region_se + sex_ratio+pct_aging, 
+                    data = death_data, 
+                    trControl = data_train, 
+                    method = 'lm', 
+                    na.action = na.pass) 
+
+model_caret 
+model_caret$finalModel  
+```
+
+####Lasso
+
+```{r}
+set.seed(1) 
+data_train = trainControl(method = "cv", number = 10) 
+model_caret = train(target_death_rate ~ incidence_rate +
+                      median_age_female+ poverty_percent+
+                      avg_household_size + percent_married +
+                      pct_employed16_over+ pct_bach_deg18_24 +
+                      pct_hs25_over + pct_unemployed16_over + 
+                      pct_public_coverage_alone +  pct_black +
+                      pct_married_households + birth_rate + race_other +
+                      region_w + region_sw + region_me + region_se +
+                      sex_ratio+pct_aging, 
+                    data = death_data, 
+                    trControl = data_train, 
+                    method = 'lm', 
+                    na.action = na.pass) 
+
+model_caret 
+model_caret$finalModel 
+```
+
+### RMSE Comparison
+
+```{r}
+cv_df = crossv_kfold(death_data, k=10) %>%
+  mutate(train = map(train, as_tibble), 
+         test = map(test, as_tibble))  
+cv_df =  cv_df %>%  
+  mutate(step_mod = map(train, ~step_reg), 
+         lasso_mod = map(train, ~lasso_reg), 
+         vif_mod = map(train, ~vif_reg)) %>% 
+  mutate(rmse_step = map2_dbl(step_mod, test, ~rmse(model = .x, data = .y)), 
+         rmse_lasso = map2_dbl(lasso_mod, test, ~rmse(model = .x, data = .y)), 
+         rmse_vif = map2_dbl(vif_mod, test, ~rmse(model = .x, data = .y)))  
+
+
+cv_df %>%  
+  dplyr::select(starts_with("rmse")) %>%  
+  gather(key = model, value = rmse) %>%  
+  mutate(model = str_replace(model, "rmse_", ""), 
+         model = fct_inorder(model)) %>%  
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin() 
+```
+
