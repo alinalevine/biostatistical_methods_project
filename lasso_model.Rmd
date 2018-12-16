@@ -8,6 +8,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(glmnet)
 library(leaps)
+library(caret)
+library(modelr)
 ```
 
 ```{r load_data}
@@ -56,7 +58,7 @@ death_data =
   mutate(sex_ratio = replace_na(sex_ratio,50.2), pct_aging = replace_na(pct_aging,15.58), pct_private_coverage_alone = replace_na(pct_private_coverage_alone,48.48), pct_employed16_over = replace_na(pct_employed16_over,48.48), median_age = replace_na(median_age,40.82))
 ```
 
-```{r lasso, fig.width=10, fig.height=30}
+```{r lasso, fig.width=10, fig.height=10}
 d = death_data
 
 cancer_x = d %>%

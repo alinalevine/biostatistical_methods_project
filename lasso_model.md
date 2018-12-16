@@ -29,35 +29,14 @@ death_data_full = read_csv("data/Cancer_Registry.csv") %>%
     ## See spec(...) for full column specifications.
 
 ``` r
-cancer_data = read_csv("./data/Cancer_Registry.csv") %>% 
-  janitor::clean_names() %>% 
-  mutate(study_per_cap = ifelse(study_per_cap == 0, 0, 1),
-         mortality = avg_deaths_per_year/pop_est2015,
-         geography = ifelse(str_detect(geography, "County") == TRUE,geography,str_replace(geography, ","," County,")),
-         geography = str_replace(geography,"city"," City"),
-         race_nonwhite = pct_asian + pct_other_race + pct_black)
-```
-
-    ## Parsed with column specification:
-    ## cols(
-    ##   .default = col_double(),
-    ##   avgDeathsPerYear = col_integer(),
-    ##   medIncome = col_integer(),
-    ##   popEst2015 = col_integer(),
-    ##   binnedInc = col_character(),
-    ##   Geography = col_character()
-    ## )
-    ## See spec(...) for full column specifications.
-
-``` r
-         #race_nonwhite = ifelse(race_white >= 50,0,1))
-
 sex_data = read_csv("./data/SEX01.csv") %>% 
   dplyr::select(Areaname,SEX255209D) %>% 
   separate(Areaname, c("county","state"), sep = ", ") %>% 
   na.omit() %>% 
-  mutate(county = paste(county,"County", sep = " ")) %>% 
-  unite(geography,c(county, state), sep = ", ")
+  mutate(county = paste(county,"County", sep = " "),
+         sex_ratio = SEX255209D) %>% 
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,sex_ratio)
 ```
 
     ## Parsed with column specification:
@@ -95,8 +74,10 @@ age_data=read_csv("./data/AGE04.csv") %>%
   dplyr::select(Areaname,AGE775208D) %>% 
   separate(Areaname, c("county","state"), sep = ", ") %>% 
   na.omit() %>% 
-  mutate(county = paste(county,"County", sep = " ")) %>% 
-  unite(geography,c(county, state), sep = ", ")
+  mutate(county = paste(county,"County", sep = " "),
+         pct_aging = AGE775208D) %>% 
+  unite(geography,c(county, state), sep = ", ") %>% 
+  dplyr::select(geography,pct_aging)
 ```
 
     ## Parsed with column specification:
@@ -136,31 +117,46 @@ death_data_full = left_join(cancer_1,age_data,by = "geography")
 death_data_full = death_data_full %>% 
   separate(geography, c("county","state"), sep = ", ")
 
-death_data = death_data_full %>%
-    janitor::clean_names() %>%
-    dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state))
+death_data =
+  death_data_full %>%
+  janitor::clean_names() %>%
+  dplyr::select(-c(avg_ann_count,avg_deaths_per_year, pct_some_col18_24, binned_inc, county, pct_asian, pct_other_race,state)) %>% 
+  mutate(sex_ratio = replace_na(sex_ratio,50.2), pct_aging = replace_na(pct_aging,15.58), pct_private_coverage_alone = replace_na(pct_private_coverage_alone,48.48), pct_employed16_over = replace_na(pct_employed16_over,48.48), median_age = replace_na(median_age,40.82))
 ```
 
 ``` r
 d = death_data
 
-d[is.na(d)] <- 0
-
 cancer_x = d %>%
-  select(-target_death_rate)
+  dplyr::select(- target_death_rate)
 
 predictor = as.matrix(cancer_x)
 
 target = as.matrix(d$target_death_rate)
 
-grid <- 10^seq(2,-2, length=20)
+grid <- 10^seq(-0.1,0, length = 30)
+
+train<-sample(1:3059,2753)
+
+test<-(-train)
+
+cv.out<-cv.glmnet(predictor[train,],target[train])
+plot(cv.out)
+```
+
+![](lasso_model_files/figure-markdown_github/lasso-1.png)
+
+``` r
+best.lambda<-cv.out$lambda.min
 
 lasso <- cv.glmnet(predictor, target, standardize = TRUE, lambda = grid)
+
+best.lambda<-cv.out$lambda.min
 
 plot(lasso$glmnet.fit, "lambda", label=TRUE)
 ```
 
-![](lasso_model_files/figure-markdown_github/lasso-1.png)
+![](lasso_model_files/figure-markdown_github/lasso-2.png)
 
 ``` r
 colnames(predictor)
@@ -181,116 +177,96 @@ colnames(predictor)
     ## [25] "pct_married_households"     "birth_rate"                
     ## [27] "race_other"                 "region_w"                  
     ## [29] "region_sw"                  "region_me"                 
-    ## [31] "region_se"                  "sex255209d"                
-    ## [33] "age775208d"
-
-16, 21, 3, 6, 15, 17, 13, 25, 18, 23
-
-PctBachDeg25\_Over, PctPublicCoverageAlone, incidenceRate, povertyPercent, PctHS25\_Over, PctUnemployed16\_Over, PctHS18\_24, PctMarriedHouseholds, PctPrivateCoverage, PctBlack
+    ## [31] "region_se"                  "sex_ratio"                 
+    ## [33] "pct_aging"
 
 ``` r
-fit_1 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_private_coverage_alone + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
+fit = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate + region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se + pct_married_households + sex_ratio + race_other + pct_private_coverage, data = d)
 
-summary(fit_1)
+summary(fit)
 ```
 
     ## 
     ## Call:
-    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + region_w + 
-    ##     pct_public_coverage_alone + region_se + pct_private_coverage_alone + 
-    ##     pct_emp_priv_coverage + pct_married_households + median_age_female + 
-    ##     pct_hs18_24 + birth_rate, data = d)
+    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + incidence_rate + 
+    ##     region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + 
+    ##     poverty_percent + region_se + pct_married_households + sex_ratio + 
+    ##     race_other + pct_private_coverage, data = d)
     ## 
     ## Residuals:
     ##      Min       1Q   Median       3Q      Max 
-    ## -102.602  -12.525    0.452   12.070  153.916 
+    ## -102.923  -11.035   -0.068   10.917  134.097 
     ## 
     ## Coefficients:
-    ##                             Estimate Std. Error t value Pr(>|t|)    
-    ## (Intercept)                198.85160    8.04208  24.726  < 2e-16 ***
-    ## pct_bach_deg25_over         -1.67366    0.10460 -16.000  < 2e-16 ***
-    ## region_w                   -12.11827    1.35442  -8.947  < 2e-16 ***
-    ## pct_public_coverage_alone    0.89668    0.11550   7.763 1.12e-14 ***
-    ## region_se                    8.37050    0.92173   9.081  < 2e-16 ***
-    ## pct_private_coverage_alone  -0.00434    0.01976  -0.220   0.8262    
-    ## pct_emp_priv_coverage        0.45446    0.06840   6.644 3.60e-11 ***
-    ## pct_married_households      -0.74180    0.07413 -10.007  < 2e-16 ***
-    ## median_age_female           -0.16009    0.08354  -1.916   0.0554 .  
-    ## pct_hs18_24                  0.41354    0.04933   8.384  < 2e-16 ***
-    ## birth_rate                  -0.90150    0.20786  -4.337 1.49e-05 ***
+    ##                          Estimate Std. Error t value Pr(>|t|)    
+    ## (Intercept)             69.761287  14.047138   4.966 7.20e-07 ***
+    ## pct_bach_deg25_over     -0.905183   0.134860  -6.712 2.28e-11 ***
+    ## incidence_rate           0.192406   0.006999  27.490  < 2e-16 ***
+    ## region_w               -10.058681   1.251145  -8.040 1.28e-15 ***
+    ## pct_hs18_24              0.302379   0.046020   6.571 5.87e-11 ***
+    ## pct_hs25_over            0.308481   0.091859   3.358 0.000794 ***
+    ## pct_unemployed16_over    0.541367   0.144814   3.738 0.000189 ***
+    ## poverty_percent          0.406597   0.122356   3.323 0.000901 ***
+    ## region_se                3.824521   0.871237   4.390 1.17e-05 ***
+    ## pct_married_households  -0.296819   0.074759  -3.970 7.34e-05 ***
+    ## sex_ratio                0.718937   0.179982   3.994 6.64e-05 ***
+    ## race_other              -0.307665   0.084318  -3.649 0.000268 ***
+    ## pct_private_coverage    -0.277325   0.070882  -3.912 9.33e-05 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
     ## 
-    ## Residual standard error: 21.71 on 3048 degrees of freedom
-    ## Multiple R-squared:  0.3905, Adjusted R-squared:  0.3885 
-    ## F-statistic: 195.3 on 10 and 3048 DF,  p-value: < 2.2e-16
+    ## Residual standard error: 19.3 on 3046 degrees of freedom
+    ## Multiple R-squared:  0.5186, Adjusted R-squared:  0.5167 
+    ## F-statistic: 273.5 on 12 and 3046 DF,  p-value: < 2.2e-16
 
 ``` r
-fit_2 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + median_age_female + pct_hs18_24 + birth_rate, data = d)
+set.seed(1)
+data_train = trainControl(method = "cv", number = 10)
 
-summary(fit_2)
+vif_reg = lm(target_death_rate ~ incidence_rate +
+                      median_age_female+
+                      poverty_percent+
+                      avg_household_size + percent_married +
+                      pct_employed16_over+
+                      pct_bach_deg18_24 + pct_hs25_over +
+                      pct_unemployed16_over + 
+                      pct_public_coverage_alone + 
+                      pct_black + pct_married_households + birth_rate +
+                      race_other + region_w + region_sw + region_me +
+                      region_se + sex_ratio+pct_aging, data =
+                      d)
+
+lasso_reg = lm(target_death_rate ~ pct_bach_deg25_over + incidence_rate +
+region_w + pct_hs18_24 + pct_hs25_over + pct_unemployed16_over + poverty_percent + region_se +
+ pct_married_households + sex_ratio + race_other + pct_private_coverage, data =
+                      d)
+  
+step_reg = lm(target_death_rate ~ incidence_rate + med_income + poverty_percent  + median_age_male + percent_married +
+pct_hs18_24 + pct_hs25_over + pct_bach_deg25_over + pct_employed16_over + pct_unemployed16_over  +
+pct_private_coverage + pct_emp_priv_coverage + pct_white + pct_black + pct_married_households +
+birth_rate  + race_other + region_w + region_sw + region_me + region_se + sex_ratio + pct_aging, data =
+                      d)
+
+cv_df =
+  crossv_kfold(death_data, k=10) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble))
+
+cv_df = 
+  cv_df %>% 
+  mutate(step_mod = map(train, ~step_reg),
+         lasso_mod = map(train, ~lasso_reg),
+         vif_mod = map(train, ~vif_reg)) %>% 
+  mutate(rmse_step    = map2_dbl(step_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_lasso = map2_dbl(lasso_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_vif = map2_dbl(vif_mod, test, ~rmse(model = .x, data = .y)))
+  
+cv_df %>% 
+  dplyr::select(starts_with("rmse")) %>% 
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
-    ## 
-    ## Call:
-    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + region_w + 
-    ##     pct_public_coverage_alone + region_se + pct_emp_priv_coverage + 
-    ##     pct_married_households + median_age_female + pct_hs18_24 + 
-    ##     birth_rate, data = d)
-    ## 
-    ## Residuals:
-    ##      Min       1Q   Median       3Q      Max 
-    ## -102.612  -12.571    0.476   12.037  153.866 
-    ## 
-    ## Coefficients:
-    ##                            Estimate Std. Error t value Pr(>|t|)    
-    ## (Intercept)               198.76949    8.03213  24.747  < 2e-16 ***
-    ## pct_bach_deg25_over        -1.67361    0.10458 -16.003  < 2e-16 ***
-    ## region_w                  -12.12281    1.35405  -8.953  < 2e-16 ***
-    ## pct_public_coverage_alone   0.89844    0.11520   7.799 8.52e-15 ***
-    ## region_se                   8.36172    0.92072   9.082  < 2e-16 ***
-    ## pct_emp_priv_coverage       0.45164    0.06717   6.724 2.10e-11 ***
-    ## pct_married_households     -0.74179    0.07412 -10.008  < 2e-16 ***
-    ## median_age_female          -0.16001    0.08352  -1.916   0.0555 .  
-    ## pct_hs18_24                 0.41367    0.04932   8.388  < 2e-16 ***
-    ## birth_rate                 -0.90307    0.20771  -4.348 1.42e-05 ***
-    ## ---
-    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-    ## 
-    ## Residual standard error: 21.7 on 3049 degrees of freedom
-    ## Multiple R-squared:  0.3905, Adjusted R-squared:  0.3887 
-    ## F-statistic: 217.1 on 9 and 3049 DF,  p-value: < 2.2e-16
-
-``` r
-fit_3 = lm(target_death_rate ~ pct_bach_deg25_over + region_w + pct_public_coverage_alone + region_se + pct_emp_priv_coverage + pct_married_households + pct_hs18_24 + birth_rate, data = d)
-
-summary(fit_3)
-```
-
-    ## 
-    ## Call:
-    ## lm(formula = target_death_rate ~ pct_bach_deg25_over + region_w + 
-    ##     pct_public_coverage_alone + region_se + pct_emp_priv_coverage + 
-    ##     pct_married_households + pct_hs18_24 + birth_rate, data = d)
-    ## 
-    ## Residuals:
-    ##      Min       1Q   Median       3Q      Max 
-    ## -102.198  -12.661    0.428   12.187  154.853 
-    ## 
-    ## Coefficients:
-    ##                            Estimate Std. Error t value Pr(>|t|)    
-    ## (Intercept)               190.68734    6.83794  27.887  < 2e-16 ***
-    ## pct_bach_deg25_over        -1.66565    0.10455 -15.932  < 2e-16 ***
-    ## region_w                  -11.84292    1.34674  -8.794  < 2e-16 ***
-    ## pct_public_coverage_alone   0.93390    0.11376   8.210 3.24e-16 ***
-    ## region_se                   8.54484    0.91615   9.327  < 2e-16 ***
-    ## pct_emp_priv_coverage       0.49426    0.06340   7.795 8.74e-15 ***
-    ## pct_married_households     -0.76514    0.07314 -10.461  < 2e-16 ***
-    ## pct_hs18_24                 0.39805    0.04866   8.181 4.10e-16 ***
-    ## birth_rate                 -0.82528    0.20379  -4.050 5.26e-05 ***
-    ## ---
-    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-    ## 
-    ## Residual standard error: 21.71 on 3050 degrees of freedom
-    ## Multiple R-squared:  0.3898, Adjusted R-squared:  0.3882 
-    ## F-statistic: 243.5 on 8 and 3050 DF,  p-value: < 2.2e-16
+![](lasso_model_files/figure-markdown_github/cv-1.png)
